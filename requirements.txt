@@ -37,6 +37,14 @@ grpcio>=1.50.0
 protobuf>=4.20.0
 googleapis-common-protos>=1.56.0
 
+# ==================== MCP (Model Context Protocol) ====================
+mcp>=0.1.0
+pydantic-ai>=0.1.0
+
+# ==================== SSE & WebSocket ====================
+sse-starlette>=2.0.0
+websockets>=13.0
+
 # ==================== Database ====================
 sqlalchemy>=2.0.0
 asyncpg>=0.28.0

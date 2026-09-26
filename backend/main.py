@@ -4,218 +4,367 @@ FastAPI application with OpenTelemetry observability
 import os
 import sys
 import logging
-from datetime import datetime, timezone
-from uuid import uuid4
 
 # Configure logging BEFORE importing anything else
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
-logger = logging.getLogger(__name__)
 
 # Add backend to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# Initialize OpenTelemetry BEFORE creating FastAPI app
-try:
-    from config.opentelemetry_config import init_otel
-    otel = init_otel(service_name="event-planning-api")
-except Exception as e:
-    logger.error(f"Failed to import OpenTelemetry config: {e}")
-    otel = None
+# Import structlog early
+import structlog
 
-# Now import FastAPI
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from typing import Optional
-import asyncio
-
-# Initialize FastAPI
-app = FastAPI(
-    title="Event Planning MCP API",
-    description="Model Context Protocol with Observability",
-    version="1.0.0",
-    docs_url="/docs",
-    openapi_url="/openapi.json"
+# Configure structlog for JSON output (best for observability)
+structlog.configure(
+    processors=[
+        structlog.stdlib.filter_by_level,
+        structlog.stdlib.add_logger_name,
+        structlog.stdlib.add_log_level,
+        structlog.stdlib.PositionalArgumentsFormatter(),
+        structlog.processors.TimeStamper(fmt="iso"),
+        structlog.processors.StackInfoRenderer(),
+        structlog.processors.format_exc_info,
+        structlog.processors.UnicodeDecoder(),
+        structlog.dev.ConsoleRenderer() if os.getenv("ENV") == "dev" else structlog.processors.JSONRenderer()
+    ],
+    context_class=dict,
+    logger_factory=structlog.stdlib.LoggerFactory(),
+    cache_logger_on_first_use=True,
 )
 
-# Initialize OpenTelemetry with FastAPI
-if otel:
-    otel.initialize(app)
-    logger.info("✅ OpenTelemetry initialized successfully")
-else:
-    logger.warning("⚠️  OpenTelemetry not available")
+logger = structlog.get_logger()
 
-# Get allowed origins from environment
-allowed_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:5173").split(",")
+# Import FastAPI
+from fastapi import FastAPI, HTTPException, Query
+from fastapi.responses import StreamingResponse, Response
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from typing import Optional, Dict, Any
+from datetime import datetime
+from uuid import uuid4
+import asyncio
+from prometheus_client import CollectorRegistry, generate_latest, REGISTRY
 
-# Add CORS middleware
+# Import configurations
+from backend.config.opentelemetry_config import init_otel
+from backend.config.prometheus_config import init_prometheus_metrics, get_metrics
+from backend.config.observability_middleware import ObservabilityMiddleware
+from backend.config.tracing import trace_function, trace_span, PerformanceTracker
+
+# Import backend modules
+from backend.mcp_server import mcp_server
+from backend.sse_manager import sse_manager, EventType
+
+# Create FastAPI app
+app = FastAPI(
+    title="Event Planning MCP Server",
+    description="Event planning with MCP and real-time SSE updates",
+    version="1.0.0"
+)
+
+# Add CORS middleware (before other middleware)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allowed_origins,
+    allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Models
-class HealthResponse(BaseModel):
-    status: str
-    message: str
-    python_version: str
-    opentelemetry_enabled: bool
+# Add observability middleware
+app.add_middleware(ObservabilityMiddleware)
 
-class PlanRequest(BaseModel):
+# Initialize OpenTelemetry
+otel = init_otel(service_name="event-planning-api")
+otel.initialize(app)
+
+# Initialize metrics
+init_prometheus_metrics()
+
+# Data models
+class PlanCreateRequest(BaseModel):
     query: str
-    context: Optional[dict] = None
-    event_date: Optional[str] = None
-    event_location: Optional[str] = None
-    num_people: Optional[int] = 0
-    budget: Optional[float] = 0.0
+    event_date: str
+    event_location: str
+    num_people: int
+    budget: float
 
-class PlanResponse(BaseModel):
+class Plan(BaseModel):
     plan_id: str
     status: str
     query: str
-    created_at: str
-    event_date: Optional[str] = None
-    event_location: Optional[str] = None
-    num_people: Optional[int] = 0
-    budget: Optional[float] = 0.0
-    progress: Optional[int] = 0
-    result: Optional[dict] = None
-    updated_at: Optional[str] = None
+    created_at: datetime
+    event_date: str
+    event_location: str
+    num_people: int
+    budget: float
+    progress: int
+    result: Optional[str] = None
+    updated_at: datetime
 
 # In-memory storage
-plans_db = {}
+plans_db: dict = {}
 
-# Routes
-@app.get("/", tags=["Root"])
-async def root():
-    """Root endpoint"""
-    return {
-        "message": "Welcome to Event Planning MCP API",
-        "docs": "/docs",
-        "health": "/health"
-    }
+@app.on_event("startup")
+async def startup():
+    """Initialize on startup"""
+    logger.info("starting_server")
+    
+    # Initialize MCP server
+    await mcp_server.run()
+    
+    logger.info(
+        "server_initialized",
+        mcp_tools_count=len(mcp_server.tools),
+        features=["opentelemetry", "prometheus", "jaeger", "sse", "mcp"]
+    )
 
-@app.get("/health", response_model=HealthResponse, tags=["Health"])
+@app.on_event("shutdown")
+async def shutdown():
+    """Cleanup on shutdown"""
+    logger.info("shutting_down_server")
+
+# Health check
+@app.get("/health")
 async def health_check():
     """Health check endpoint"""
     return {
         "status": "healthy",
         "message": "API is running",
-        "python_version": f"{sys.version.split()[0]}",
-        "opentelemetry_enabled": otel is not None
+        "python_version": "3.14.6",
+        "opentelemetry_enabled": True,
+        "mcp_enabled": True,
+        "sse_enabled": True
     }
 
-@app.post("/plan/create", response_model=PlanResponse, tags=["Plans"])
-async def create_plan(request: PlanRequest):
-    """Create a new planning request"""
-    plan_id = str(uuid4())
-    now = datetime.now(timezone.utc).isoformat()
+# Plan endpoints
+@app.post("/plan/create")
+@trace_function("create_plan")
+async def create_plan(request: PlanCreateRequest):
+    """Create a new event plan"""
+    with PerformanceTracker("plan_creation"):
+        plan_id = str(uuid4())
+        
+        plan = Plan(
+            plan_id=plan_id,
+            status="processing",
+            query=request.query,
+            created_at=datetime.utcnow(),
+            event_date=request.event_date,
+            event_location=request.event_location,
+            num_people=request.num_people,
+            budget=request.budget,
+            progress=0,
+            updated_at=datetime.utcnow()
+        )
+        
+        plans_db[plan_id] = plan.dict()
+        
+        # Publish SSE event
+        await sse_manager.publish(
+            plan_id,
+            EventType.PLAN_CREATED,
+            {
+                "plan_id": plan_id,
+                "query": request.query,
+                "event_location": request.event_location
+            }
+        )
+        
+        # Log the creation
+        logger.info(
+            "plan_created",
+            plan_id=plan_id,
+            query=request.query,
+            event_location=request.event_location,
+            num_people=request.num_people,
+            budget=request.budget
+        )
+        
+        # Simulate async processing
+        asyncio.create_task(simulate_plan_processing(plan_id))
+        
+        return plan
+
+@app.get("/plan/{plan_id}")
+@trace_function("get_plan")
+async def get_plan(plan_id: str):
+    """Get plan details"""
+    if plan_id not in plans_db:
+        logger.warning("plan_not_found", plan_id=plan_id)
+        raise HTTPException(status_code=404, detail="Plan not found")
     
-    logger.info(
-        f"Creating plan: {plan_id}",
-        extra={
-            "plan_id": plan_id,
-            "query": request.query,
-            "location": request.event_location
+    return plans_db[plan_id]
+
+@app.get("/plans")
+async def list_plans(status: Optional[str] = Query(None)):
+    """List all plans, optionally filtered by status"""
+    plans = list(plans_db.values())
+    
+    if status:
+        plans = [p for p in plans if p["status"] == status]
+    
+    logger.info("plans_listed", total_count=len(plans_db), filtered_count=len(plans), filter_status=status)
+    
+    return {
+        "total": len(plans),
+        "plans": plans
+    }
+
+@app.get("/plan/{plan_id}/events")
+async def stream_plan_events(plan_id: str):
+    """Stream real-time events for a plan"""
+    if plan_id not in plans_db:
+        logger.warning("plan_not_found_for_sse", plan_id=plan_id)
+        raise HTTPException(status_code=404, detail="Plan not found")
+    
+    logger.info("sse_subscription_started", plan_id=plan_id)
+    
+    async def event_generator():
+        async for event in sse_manager.subscribe(plan_id):
+            yield event + "\n\n"
+    
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no"
         }
     )
-    
-    plans_db[plan_id] = {
-        "plan_id": plan_id,
-        "status": "processing",
-        "query": request.query,
-        "event_date": request.event_date,
-        "event_location": request.event_location,
-        "num_people": request.num_people,
-        "budget": request.budget,
-        "context": request.context or {},
-        "progress": 0,
-        "result": None,
-        "created_at": now,
-        "updated_at": now
-    }
-    
-    # Start background processing
-    asyncio.create_task(process_plan(plan_id))
-    
-    return PlanResponse(**plans_db[plan_id])
 
-@app.get("/plan/{plan_id}", response_model=PlanResponse, tags=["Plans"])
-async def get_plan(plan_id: str):
-    """Get a specific plan"""
-    logger.info(f"Retrieving plan: {plan_id}")
-    
-    if plan_id not in plans_db:
-        logger.warning(f"Plan not found: {plan_id}")
-        raise HTTPException(status_code=404, detail=f"Plan {plan_id} not found")
-    
-    return PlanResponse(**plans_db[plan_id])
+# MCP Tools endpoint
+@app.get("/mcp/tools")
+async def list_mcp_tools():
+    """List available MCP tools"""
+    tools = mcp_server.list_tools()
+    logger.info("mcp_tools_listed", tools_count=len(tools))
+    return {"tools": tools}
 
-@app.get("/plans", tags=["Plans"])
-async def list_plans():
-    """List all plans"""
-    logger.info(f"Listing all plans (total: {len(plans_db)})")
+# MCP Tool execution endpoint
+@app.post("/mcp/tools/{tool_name}")
+@trace_function("mcp_tool_execution")
+async def execute_mcp_tool(tool_name: str, arguments: Dict[str, Any]):
+    """Execute an MCP tool"""
+    from backend.config.prometheus_config import mcp_tool_calls_total, mcp_tool_duration_seconds, mcp_tool_errors_total
     
-    return {
-        "total": len(plans_db),
-        "plans": list(plans_db.values())
-    }
-
-@app.get("/metrics", tags=["Metrics"])
-async def get_metrics():
-    """Get system metrics"""
-    return {
-        "total_plans": len(plans_db),
-        "plans_by_status": {
-            "processing": sum(1 for p in plans_db.values() if p["status"] == "processing"),
-            "completed": sum(1 for p in plans_db.values() if p["status"] == "completed"),
-            "failed": sum(1 for p in plans_db.values() if p["status"] == "failed")
-        }
-    }
-
-# Background task
-async def process_plan(plan_id: str):
-    """Simulate plan processing"""
+    start_time = datetime.utcnow()
     try:
-        plan = plans_db.get(plan_id)
-        if not plan:
-            return
+        with PerformanceTracker(f"mcp_tool_{tool_name}"):
+            result = mcp_server.call_tool(tool_name, arguments)
+            
+            # Record metrics
+            duration_seconds = (datetime.utcnow() - start_time).total_seconds()
+            mcp_tool_calls_total.labels(tool_name=tool_name, status="success").inc()
+            mcp_tool_duration_seconds.labels(tool_name=tool_name).observe(duration_seconds)
+            
+            logger.info(
+                "mcp_tool_executed",
+                tool_name=tool_name,
+                duration_seconds=round(duration_seconds, 3),
+                status="success"
+            )
+            return result
+    except Exception as e:
+        mcp_tool_calls_total.labels(tool_name=tool_name, status="error").inc()
+        mcp_tool_errors_total.labels(tool_name=tool_name, error_type=type(e).__name__).inc()
         
-        steps = [
-            "Step 1: Initial planning",
-            "Step 2: Resource allocation",
-            "Step 3: Timeline creation",
-            "Step 4: Budget breakdown"
-        ]
+        logger.error(
+            "mcp_tool_error",
+            tool_name=tool_name,
+            error_type=type(e).__name__,
+            error_message=str(e),
+            exc_info=True
+        )
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Metrics endpoint
+@app.get("/metrics")
+async def get_metrics_json():
+    """Get application metrics in JSON format"""
+    plans = list(plans_db.values())
+    
+    metrics = {
+        "timestamp": datetime.utcnow().isoformat(),
+        "total_plans": len(plans),
+        "plans_by_status": {
+            "processing": len([p for p in plans if p["status"] == "processing"]),
+            "completed": len([p for p in plans if p["status"] == "completed"]),
+            "failed": len([p for p in plans if p["status"] == "failed"])
+        },
+        "active_subscriptions": sse_manager.get_active_subscriptions(),
+        "mcp_tools_available": len(mcp_server.tools)
+    }
+    
+    logger.info("metrics_retrieved", metrics=metrics)
+    return metrics
+
+@app.get("/metrics/prometheus", response_class=Response)
+async def get_prometheus_metrics():
+    """Get Prometheus metrics in standard format"""
+    from prometheus_client import generate_latest, REGISTRY
+    metrics = generate_latest(REGISTRY).decode('utf-8')
+    return Response(content=metrics, media_type="text/plain; charset=utf-8")
+
+# Helper function for simulating processing
+@trace_function("simulate_plan_processing")
+async def simulate_plan_processing(plan_id: str):
+    """Simulate async plan processing"""
+    try:
+        logger.info("plan_processing_started", plan_id=plan_id)
         
-        for i, step in enumerate(steps):
-            await asyncio.sleep(1)  # Simulate work
-            plan["progress"] = int((i + 1) / len(steps) * 100)
-            plan["updated_at"] = datetime.now(timezone.utc).isoformat()
+        # Simulate progress updates
+        for progress in range(0, 101, 10):
+            await asyncio.sleep(1)
+            
+            plans_db[plan_id]["progress"] = progress
+            
+            await sse_manager.publish(
+                plan_id,
+                EventType.PROGRESS_UPDATE,
+                {"progress": progress, "message": f"Processing {progress}%"}
+            )
         
-        plan["status"] = "completed"
-        plan["result"] = {
-            "steps": steps,
-            "estimated_cost": plan['budget'],
-            "duration_days": 30
-        }
+        # Mark as completed
+        plans_db[plan_id]["status"] = "completed"
+        plans_db[plan_id]["result"] = f"Event plan for {plans_db[plan_id]['query']} created successfully"
+        plans_db[plan_id]["updated_at"] = datetime.utcnow()
         
-        logger.info(f"Plan completed: {plan_id}")
+        await sse_manager.publish(
+            plan_id,
+            EventType.PLAN_COMPLETED,
+            {
+                "plan_id": plan_id,
+                "result": plans_db[plan_id]["result"]
+            }
+        )
+        
+        logger.info("plan_completed", plan_id=plan_id, query=plans_db[plan_id]["query"])
     
     except Exception as e:
-        logger.error(f"Plan processing failed: {plan_id} - {str(e)}", exc_info=True)
-        plan = plans_db.get(plan_id)
-        if plan:
-            plan["status"] = "failed"
-            plan["result"] = {"error": str(e)}
+        logger.error(
+            "plan_processing_error",
+            plan_id=plan_id,
+            error_type=type(e).__name__,
+            error_message=str(e),
+            exc_info=True
+        )
+        plans_db[plan_id]["status"] = "failed"
+        
+        await sse_manager.publish(
+            plan_id,
+            EventType.PLAN_FAILED,
+            {"plan_id": plan_id, "error": str(e)}
+        )
 
 if __name__ == "__main__":
     import uvicorn
-    logger.info(f"🚀 Starting server on 0.0.0.0:8000")
-    uvicorn.run(app, host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run(
+        app,
+        host="0.0.0.0",
+        port=8000,
+        log_level="info"
+    )

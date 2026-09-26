@@ -13,7 +13,7 @@ python --version
 ## Step 1: Start Observability Stack
 
 ```bash
-cd /Users/hien.luong/Projects/AI/mcp
+cd /path/to/Projects/AI/mcp
 
 # Start Jaeger, Prometheus, and Grafana
 docker-compose up -d
@@ -34,7 +34,7 @@ grafana             /run.sh             Up
 
 ```bash
 # In a new terminal
-cd /Users/hien.luong/Projects/AI/mcp
+cd /path/to/Projects/AI/mcp
 
 # Install/update dependencies
 pip install -r requirements.txt

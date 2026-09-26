@@ -50,7 +50,7 @@ Complete guide to monitoring and debugging the Event Planning MCP Server.
 
 ```bash
 # Start the observability stack
-cd /Users/hien.luong/Projects/AI/mcp
+cd /path/to/Projects/AI/mcp
 docker-compose up -d
 
 # Start the API server (in another terminal)
