@@ -60,6 +60,27 @@ export default function EventPlannerPage() {
     }
   }
 
+  const handleSSETimeout = (data) => {
+    console.warn('SSE Timeout:', data)
+    // Show custom notification
+  }
+
+  const handleSSEError = (data) => {
+    console.error('SSE Error:', data)
+    // Handle different error types
+    switch (data.type) {
+      case 'PARSE_ERROR':
+        // Handle JSON parsing errors
+        break
+      case 'CONNECTION_ERROR':
+        // Handle connection errors
+        break
+      case 'SETUP_ERROR':
+        // Handle setup errors
+        break
+    }
+  }
+
   return (
     <Container maxWidth="lg">
       <Box sx={{ py: 4 }}>
@@ -147,7 +168,15 @@ export default function EventPlannerPage() {
             {plan && (
               <Grid container spacing={3} sx={{ mt: 2 }}>
                 <Grid item xs={12}>
-                  <EventStreamViewer planId={plan.plan_id} />
+                  <EventStreamViewer
+                    planId={plan.plan_id}
+                    timeoutMs={30000} // 30 seconds
+                    warningMs={10000} // Warn after 10 seconds
+                    autoRetry={true}
+                    maxRetries={3}
+                    onTimeout={handleSSETimeout}
+                    onError={handleSSEError}
+                  />
                 </Grid>
 
                 <Grid item xs={12} md={6}>

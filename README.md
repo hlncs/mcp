@@ -465,6 +465,35 @@ IDEAL_TEMP_MAX=25
 # Frontend (.env in frontend/ directory)
 VITE_API_BASE_URL=http://localhost:8000
 VITE_APP_NAME=Event Planning System
+
+# SSE Configuration (in milliseconds)
+VITE_SSE_TIMEOUT=30000          # Connection timeout (default: 30s)
+VITE_SSE_WARNING=10000          # Warning threshold (default: 10s)
+```
+
+### SSE Timeout Configuration
+
+The EventStreamViewer component has configurable timeouts:
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `timeoutMs` | 30000 ms | Total timeout before connection is considered failed |
+| `warningMs` | 10000 ms | Show warning to user after this delay |
+| `autoRetry` | true | Automatically retry on failure |
+| `maxRetries` | 3 | Maximum number of retry attempts |
+
+**Set via environment variables or component props:**
+
+```jsx
+<EventStreamViewer
+  planId={planId}
+  timeoutMs={60000}        // 60 seconds
+  warningMs={15000}        // Warn after 15 seconds
+  autoRetry={true}
+  maxRetries={5}
+  onTimeout={(data) => console.log('Timeout:', data)}
+  onError={(data) => console.error('Error:', data)}
+/>
 ```
 
 ## 📚 Dependencies
