@@ -1,0 +1,122 @@
+# ==================== Python ====================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# ==================== Virtual Environments ====================
+venv/
+ENV/
+env/
+.venv
+
+# ==================== IDE & Editors ====================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+.project
+.pydevproject
+.settings/
+*.sublime-project
+*.sublime-workspace
+.vim/
+
+# ==================== Logs ====================
+logs/
+*.log
+npm-debug.log*
+pip-log.txt
+pip-delete-this-directory.txt
+
+# ==================== Testing & Coverage ====================
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+htmlcov/
+
+# ==================== Node.js / Frontend ====================
+node_modules/
+npm-debug.log
+yarn-error.log
+frontend/dist/
+frontend/build/
+.pnp
+.pnp.js
+
+# ==================== Environment Variables ====================
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env.*.local
+
+# ==================== Database ====================
+*.db
+*.sqlite
+*.sqlite3
+*.sql
+
+# ==================== OS ====================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# ==================== Project Specific ====================
+*.gguf
+models/
+downloads/
+temp/
+tmp/
+
+# ==================== LLM Models ====================
+*.bin
+*.safetensors
+.cache/huggingface/
+.ollama/
+
+# ==================== Docker ====================
+.dockerignore
+docker-compose.override.yml
+
+# ==================== Misc ====================
+.ipynb_checkpoints/
+*.ipynb
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyre/
+state.json
