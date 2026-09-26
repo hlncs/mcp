@@ -1,692 +1,387 @@
-# Event Planning System - AI-Powered Multi-Agent Orchestration
-
-A comprehensive event planning application powered by AI agents, featuring real-time progress streaming, weather forecasting, budget management, and intelligent service coordination.
-
-## 🎯 Project Overview
-
-This project implements a sophisticated multi-agent system using **Model Context Protocol (MCP)** to orchestrate AI agents for event planning. It combines a Python FastAPI backend with a React frontend, enhanced with **Server-Sent Events (SSE)** for real-time progress streaming.
-
-**Key Features:**
-- 🤖 Multi-agent orchestration (10+ specialized agents)
-- ⚡ Real-time progress streaming with SSE
-- 🌦️ Real-time weather forecasting
-- 💰 Smart budget management & validation
-- 🏨 Comprehensive service search (hotels, venues, flights, catering, etc.)
-- 📋 AI-powered event planning
-- 🎨 Modern React UI with Material-UI
-- 🔌 MCP Server integration
-- 📡 Live event tracking dashboard
-
-## 📁 Project Structure
-
-```
-mcp/
-├── backend/
-│   ├── main.py                      # FastAPI application with SSE endpoints
-│   └── sse.py                       # Server-Sent Events implementation
-├── config/
-│   ├── agents.py                    # Agent configurations & routing
-│   └── __init__.py
-├── mcp_servers/
-│   ├── mock_data.py                 # Mock data provider & business logic
-│   ├── event_planning_server.py     # MCP server with tool definitions
-│   ├── tools.py                     # Tool schemas for all services
-│   └── __init__.py
-├── frontend/
-│   ├── src/
-│   │   ├── pages/
-│   │   │   ├── HomePage.jsx
-│   │   │   ├── EventPlannerPage.jsx          # Main planning interface
-│   │   │   ├── WeatherPage.jsx
-│   │   │   ├── BudgetPage.jsx
-│   │   │   └── ServiceSearchPage.jsx
-│   │   ├── components/
-│   │   │   ├── Navbar.jsx
-│   │   │   ├── Sidebar.jsx
-│   │   │   └── EventStreamViewer.jsx         # Real-time progress viewer
-│   │   ├── App.jsx
-│   │   ├── main.jsx
-│   │   └── index.css
-│   ├── index.html
-│   ├── vite.config.js
-│   ├── package.json
-│   └── .env.example
-├── .gitignore
-├── README.md
-└── prompt.md
-```
-
-## 🚀 Quick Start
-
-### Prerequisites
-
-- **Python 3.11+**
-- **Node.js 18+** & **npm 9+**
-- **Git**
-
-### Backend Setup
-
-```bash
-# Navigate to project directory
-cd /path/toProjects/AI/mcp
-
-# Install Python dependencies
-pip install fastapi uvicorn pydantic python-dotenv
-
-# Start backend server
-python backend/main.py
-```
-
-Backend runs on: **http://localhost:8000**
-
-API Documentation: **http://localhost:8000/docs**
-
-### Frontend Setup
-
-```bash
-# Navigate to frontend directory
-cd frontend
-
-# Install dependencies
-npm install
-
-# Start development server
-npm run dev
-```
-
-Frontend runs on: **http://localhost:3000**
-
-### Running Both Services
-
-**Terminal 1 - Backend:**
-```bash
-cd /path/toProjects/AI/mcp
-python backend/main.py
-```
-
-**Terminal 2 - Frontend:**
-```bash
-cd /path/toProjects/AI/mcp/frontend
-npm run dev
-```
-
-Then access the application at: **http://localhost:3000** 🎉
-
-## ⚡ Real-Time Streaming with SSE
-
-The system uses **Server-Sent Events (SSE)** for real-time progress updates during event planning:
-
-### Real-Time Event Flow
-
-```
-┌──────────────────┐
-│   React Browser  │
-│   (EventSource)  │
-└────────┬─────────┘
-         │ Subscribe to /stream/plan/{plan_id}
-         │
-┌────────▼─────────────────────┐
-│   FastAPI Backend            │
-│   - PlanningEventTracker     │
-│   - EventStream Manager      │
-└────────┬─────────────────────┘
-         │
-         ├─► log_step("validation", "started")
-         ├─► log_step("weather_check", "started")
-         ├─► log_step("venue_search", "completed")
-         ├─► log_step("catering_search", "completed")
-         └─► log_step("planning", "completed")
-         
-┌────────▼─────────────────────┐
-│   Real-time Updates          │
-│   ✓ Progress tracking        │
-│   ✓ Status indicators        │
-│   ✓ Error handling           │
-└──────────────────────────────┘
-```
-
-### Planning Steps
-
-When creating an event plan via `/plan/create-stream`, the system logs:
-
-1. **Validation** - Checking input parameters
-2. **Weather Check** - Fetching weather forecast
-3. **Venue Search** - Finding available venues
-4. **Catering Search** - Finding catering services
-5. **Entertainment Search** - Finding entertainment options
-6. **Plan Creation** - Generating comprehensive plan
-7. **Summary Generation** - Creating event summary
-
-Each step emits `started` and `completed` events with relevant details.
-
-## 📚 API Documentation
-
-### Base URL
-```
-http://localhost:8000
-```
-
-### Health Check
-```bash
-GET /health
-
-Response: {
-  "status": "healthy",
-  "timestamp": "2026-09-26T10:30:00",
-  "service": "Event Planning API"
-}
-```
-
-### Agents
-```bash
-# List all agents
-GET /agents
-
-# Get agent routing configuration
-GET /agents/routing
-```
-
-### Weather
-```bash
-POST /weather
-Content-Type: application/json
-
-Request:
-{
-  "location": "Sydney, Australia",
-  "date": "2026-10-15"
-}
-
-Response:
-{
-  "location": "Sydney, Australia",
-  "date": "2026-10-15",
-  "temperature": 22,
-  "condition": "sunny",
-  "confidence": 0.85,
-  "humidity": 55,
-  "wind_speed": 12,
-  "is_favorable": true
-}
-```
-
-### Event Planning - With Streaming
-```bash
-POST /plan/create-stream
-Content-Type: application/json
-
-Request:
-{
-  "event_type": "wedding",
-  "location": "Sydney, Australia",
-  "date": "2026-10-15",
-  "guest_count": 100,
-  "budget": 50000
-}
-
-Response:
-{
-  "plan_id": "550e8400-e29b-41d4-a716-446655440000",
-  "stream_url": "/stream/plan/550e8400-e29b-41d4-a716-446655440000",
-  "plan": {...},
-  "summary": {...}
-}
-
-# Then open EventSource to:
-# http://localhost:8000/stream/plan/550e8400-e29b-41d4-a716-446655440000
-```
-
-### Event Planning - Standard (No Streaming)
-```bash
-POST /plan/create
-Content-Type: application/json
-
-Request:
-{
-  "event_type": "wedding",
-  "location": "Sydney, Australia",
-  "date": "2026-10-15",
-  "guest_count": 100,
-  "budget": 50000
-}
-
-Response:
-{
-  "plan": {...},
-  "summary": {...},
-  "created_at": "2026-09-26T10:30:00"
-}
-```
-
-### Event Streaming
-```bash
-# Stream specific plan events
-GET /stream/plan/{plan_id}
-
-# Stream global events
-GET /stream/global
-
-# Returns: text/event-stream with JSON objects
-```
-
-### Services Search
-```bash
-POST /search/services?service_type=hotels&location=Sydney
-
-Request:
-{
-  "service_type": "hotels",
-  "location": "Sydney, Australia"
-}
-
-Response:
-{
-  "service_type": "hotels",
-  "location": "Sydney, Australia",
-  "results": [...],
-  "count": 3
-}
-```
-
-### All Services
-```bash
-GET /services/all?location=Sydney
-
-Response:
-{
-  "location": "Sydney, Australia",
-  "services": {
-    "hotels": [...],
-    "venues": [...],
-    "catering": [...],
-    "entertainment": [...],
-    "transportation": [...]
-  }
-}
-```
-
-### Budget Validation
-```bash
-POST /budget/validate
-Content-Type: application/json
-
-Request:
-{
-  "allocated_budget": 50000,
-  "calculated_cost": 45000
-}
-
-Response:
-{
-  "allocated_budget": 50000,
-  "calculated_cost": 45000,
-  "remaining": 5000,
-  "percentage_used": 90.0,
-  "status": "within_budget",
-  "warning": null
-}
-```
-
-### Reservations
-```bash
-POST /reservation/make
-Content-Type: application/json
-
-Request:
-{
-  "service_type": "hotel",
-  "service_id": "h001",
-  "details": {
-    "check_in": "2026-10-15",
-    "check_out": "2026-10-17",
-    "rooms": 2
-  }
-}
-
-Response:
-{
-  "reservation_id": "RES12345",
-  "service_type": "hotel",
-  "service_id": "h001",
-  "status": "confirmed",
-  "booking_date": "2026-09-26T10:30:00",
-  "confirmation_code": "CONF1234"
-}
-```
-
-## 🎨 Frontend Pages
-
-### Home Page
-- Overview of system features
-- Quick navigation cards
-- Feature descriptions
-
-### Event Planner
-- Event details form (type, location, date, guests, budget)
-- Real-time progress streaming with EventStreamViewer
-- Event plan summary with cost breakdown
-- Budget status indicator
-
-### Weather
-- Location & date input
-- Weather forecast display
-- Suitability for outdoor events
-- Temperature, humidity, wind speed
-
-### Budget Manager
-- Budget input forms
-- Cost breakdown analysis
-- Linear progress visualization
-- Budget status (within/over budget)
-- Warnings for high usage
-
-### Service Search
-- Service type selector
-- Location input
-- Results table display
-- Filtering capabilities
-
-## 🤖 Agent System
-
-| Agent | Description | Skills |
-|-------|-------------|--------|
-| **Planner** | Main orchestrator | Event management, coordination |
-| **Weather Forecaster** | Weather analysis | Forecast retrieval, analysis |
-| **Venue Booker** | Venue coordination | Venue search, booking |
-| **Catering Service** | Food & beverage | Menu selection, pricing |
-| **Entertainment Coordinator** | Entertainment | Booking, coordination |
-| **Hotel Reservation Agent** | Accommodation | Hotel search, booking |
-| **Transportation Coordinator** | Travel logistics | Transport search, booking |
-| **Flight Booking Agent** | Air travel | Flight search, booking |
-| **Budget Manager** | Financial management | Cost tracking, analysis |
-| **Plan Summarizer** | Report generation | Summary creation |
-
-## 📦 Build & Deployment
-
-### Build Frontend
-```bash
-cd frontend
-npm run build
-```
-
-Output: `frontend/dist/`
-
-### Production Server
-```bash
-cd /path/toProjects/AI/mcp
-python backend/main.py --host 0.0.0.0 --port 8000
-```
-
-## 🧪 Testing
-
-### Test SSE Connection
-```javascript
-// In browser console
-const es = new EventSource('http://localhost:8000/stream/global');
-es.onmessage = (e) => console.log(JSON.parse(e.data));
-```
-
-### Test Event Plan Creation
-```bash
-curl -X POST http://localhost:8000/plan/create-stream \
-  -H "Content-Type: application/json" \
-  -d '{
-    "event_type": "conference",
-    "location": "Sydney, Australia",
-    "date": "2026-11-20",
-    "guest_count": 200,
-    "budget": 100000
-  }'
-```
-
-### Test in Frontend
-1. Navigate to http://localhost:3000/planner
-2. Fill out event form
-3. Click "Create Plan"
-4. Watch progress in EventStreamViewer
-5. View final summary
-
-## 📋 Environment Variables
-
-Create `.env` file:
-
-```env
-# Backend
-FASTAPI_HOST=0.0.0.0
-FASTAPI_PORT=8000
-LOG_LEVEL=INFO
-
-# Weather
-OPENMETEO_API_URL=https://api.open-meteo.com/v1
-WEATHER_CONFIDENCE_THRESHOLD=0.80
-IDEAL_TEMP_MIN=20
-IDEAL_TEMP_MAX=25
-
-# Frontend (.env in frontend/ directory)
-VITE_API_BASE_URL=http://localhost:8000
-VITE_APP_NAME=Event Planning System
-
-# SSE Configuration (in milliseconds)
-VITE_SSE_TIMEOUT=30000          # Connection timeout (default: 30s)
-VITE_SSE_WARNING=10000          # Warning threshold (default: 10s)
-```
-
-### SSE Timeout Configuration
-
-The EventStreamViewer component has configurable timeouts:
-
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `timeoutMs` | 30000 ms | Total timeout before connection is considered failed |
-| `warningMs` | 10000 ms | Show warning to user after this delay |
-| `autoRetry` | true | Automatically retry on failure |
-| `maxRetries` | 3 | Maximum number of retry attempts |
-
-**Set via environment variables or component props:**
-
-```jsx
-<EventStreamViewer
-  planId={planId}
-  timeoutMs={60000}        // 60 seconds
-  warningMs={15000}        // Warn after 15 seconds
-  autoRetry={true}
-  maxRetries={5}
-  onTimeout={(data) => console.log('Timeout:', data)}
-  onError={(data) => console.error('Error:', data)}
-/>
-```
-
-## 📚 Dependencies
-
-### Backend
-- **fastapi** - Web framework
-- **uvicorn** - ASGI server
-- **pydantic** - Data validation
-- **python-dotenv** - Environment management
-
-### Frontend
-- **react** - UI library
-- **react-router-dom** - Routing
-- **@mui/material** - UI components
-- **axios** - HTTP client
-- **vite** - Build tool
-
-## 🏗️ Architecture
-
-```
-┌─────────────────────────────────────────┐
-│       React Frontend (Port 3000)        │
-│  ├── HomePage                           │
-│  ├── EventPlannerPage (SSE Consumer)   │
-│  ├── WeatherPage                        │
-│  ├── BudgetPage                         │
-│  └── ServiceSearchPage                  │
-│                                         │
-│  Components:                            │
-│  ├── Navbar                             │
-│  ├── Sidebar                            │
-│  └── EventStreamViewer (SSE Viewer)    │
-└──────────────┬──────────────────────────┘
-               │ HTTP/REST + SSE
-               ▼
-┌─────────────────────────────────────────┐
-│     FastAPI Backend (Port 8000)         │
-│  ├── REST Endpoints                     │
-│  ├── SSE Event Streaming                │
-│  ├── PlanningEventTracker               │
-│  └── EventStream Manager                │
-│                                         │
-│  Modules:                               │
-│  ├── main.py (FastAPI app)             │
-│  ├── sse.py (Real-time events)         │
-│  └── config/ (Agents & routing)        │
-└──────────────┬──────────────────────────┘
-               │
-               ▼
-┌─────────────────────────────────────────┐
-│    MCP Servers & Mock Data              │
-│  ├── event_planning_server.py           │
-│  ├── mock_data.py                       │
-│  └── tools.py                           │
-└─────────────────────────────────────────┘
-```
-
-## 🔐 Security
-
-- Environment variables for sensitive data
-- Input validation on all endpoints
-- CORS configured for development (restrict in production)
-- SSE connections validated by plan_id
-- Error messages don't expose internals
-
-## 🚦 Status Codes
-
-| Code | Meaning | Example |
-|------|---------|---------|
-| 200 | Success | Plan created successfully |
-| 400 | Bad Request | Invalid input data |
-| 404 | Not Found | Resource doesn't exist |
-| 500 | Server Error | Unexpected error |
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create feature branch: `git checkout -b feature/amazing-feature`
-3. Commit changes: `git commit -m 'Add amazing feature'`
-4. Push to branch: `git push origin feature/amazing-feature`
-5. Open Pull Request
-
-## 📄 License
-
-MIT License - See LICENSE file for details
-
-## 📞 Support
-
-- Check README.md for documentation
-- Review prompt.md for development guidelines
-- Check API docs at http://localhost:8000/docs
-- Review existing endpoints for patterns
-
-## 🗺️ Roadmap
-
-### Phase 1 (✅ Complete)
-- [x] MVP with FastAPI backend
-- [x] React frontend with Material-UI
-- [x] Mock data providers
-- [x] Basic agent system
-- [x] SSE real-time streaming
-- [x] EventStreamViewer component
-
-### Phase 2 (🔄 In Progress)
-- [ ] Real database (PostgreSQL)
-- [ ] User authentication
-- [ ] Persistent storage
-- [ ] Real LLM integration
-
-### Phase 3 (📋 Planned)
-- [ ] Payment integration (Stripe)
-- [ ] Email notifications
-- [ ] SMS alerts
-- [ ] Calendar integration
-- [ ] Admin dashboard
-- [ ] Reporting & analytics
-
-### Phase 4 (🎯 Future)
-- [ ] Mobile app (React Native)
-- [ ] WebSockets for full-duplex communication
-- [ ] Advanced search filters
-- [ ] Recommendation engine
-- [ ] Review & ratings system
-- [ ] Multi-language support
-
-## 📖 Documentation
-
-- **API Docs:** http://localhost:8000/docs (Swagger)
-- **README.md** - This file
-- **prompt.md** - Development guidelines
-- **Code comments** - Inline documentation
-
-## 🔧 Troubleshooting
-
-### Backend won't start
-```bash
-# Check Python version
-python --version  # Must be 3.11+
-
-# Check dependencies
-pip list | grep fastapi
-
-# Reinstall
-pip install -r requirements.txt
-```
-
-### Frontend won't load
-```bash
-# Clear node_modules
-rm -rf node_modules
-npm install
-
-# Check Node version
-node --version  # Must be 18+
-```
-
-### SSE not connecting
-```bash
-# Check backend is running
-curl http://localhost:8000/health
-
-# Check browser console for errors
-# Check network tab for EventSource requests
-```
-
-### Services not appearing
-```bash
-# Check mock data provider
-# Verify endpoint is called correctly
-# Check browser network tab for responses
-```
-
-## 📞 Performance Tips
-
-- SSE connections are persistent (not polling)
-- Mock data is lightweight
-- Async endpoints handle concurrent requests
-- Frontend lazy-loads pages
-- Material-UI uses CSS-in-JS for optimization
-
-## 🎓 Learning Resources
-
-- [FastAPI Docs](https://fastapi.tiangolo.com/)
-- [React Docs](https://react.dev/)
-- [Material-UI Docs](https://mui.com/)
-- [SSE Guide](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events)
-- [MCP Protocol](https://modelcontextprotocol.io/)
+# Event Management Suite
+
+A comprehensive web application for planning and managing events with weather forecasting, budget tracking, and vendor management capabilities.
+
+## 🎯 Features
+
+### 1. **Event Planner**
+- Create and manage event details
+- Set event dates, locations, and guest count
+- Budget planning and tracking
+- Real-time event information display
+
+### 2. **Weather Forecast**
+- Search for locations (Sydney, New York, London, Tokyo, Paris)
+- Interactive OpenStreetMap display with location markers
+- Temperature unit selection (Celsius/Fahrenheit)
+- Weather details: temperature, humidity, wind speed, pressure, conditions
+- Auto-temperature conversion based on selected unit
+
+### 3. **Budget Manager**
+- Track event expenses by category
+- Visual budget breakdown with progress bars
+- Currency support: USD, EUR, AUD, JPY, CAD, NZD
+- Budget allocation percentages
+- Currency preference persists across all pages
+
+### 4. **Services**
+- Browse vendors and service providers
+- Service categorization and filtering
+- Contact and pricing information
+- Integration with budget tracking
+
+### 5. **Settings**
+- Global currency preference (USD, EUR, AUD, JPY, CAD, NZD)
+- Persistent user preferences (localStorage)
+- Responsive configuration interface
+
+### 6. **Navigation**
+- Persistent sidebar navigation
+- Active page highlighting
+- Quick access to all features
+- Responsive mobile layout
 
 ---
 
-**Project Created:** September 26, 2026  
-**Last Updated:** September 26, 2026  
-**Status:** MVP Complete with Real-Time Streaming  
-**Version:** 1.0.0
+## 🚀 Getting Started
 
-Made with ❤️ for event planning
+### Prerequisites
+- **Node.js**: v16+ or v18+
+- **npm**: v8+
+- **Browser**: Modern browser with ES6 support
+
+### Installation
+
+#### 1. Clone the Repository
+```bash
+git clone https://github.com/yourusername/event-management-suite.git
+cd event-management-suite
+```
+
+#### 2. Install Frontend Dependencies
+```bash
+cd frontend
+npm install
+```
+
+#### 3. Install Map & Weather Dependencies
+```bash
+# Leaflet for maps (compatible with React 18)
+npm install react-leaflet@4.2.1 leaflet@1.9.4
+```
+
+#### 4. Start Development Server
+```bash
+npm run dev
+```
+
+Open [http://localhost:5173](http://localhost:5173) in your browser.
+
+---
+
+## 📦 Project Structure
+
+```
+event-management-suite/
+├── frontend/
+│   ├── src/
+│   │   ├── components/
+│   │   │   ├── Navbar.jsx
+│   │   │   └── Sidebar.jsx
+│   │   ├── pages/
+│   │   │   ├── HomePage.jsx
+│   │   │   ├── EventPlannerPage.jsx
+│   │   │   ├── WeatherPage.jsx
+│   │   │   ├── BudgetPage.jsx
+│   │   │   ├── ServicesPage.jsx
+│   │   │   └── SettingsPage.jsx
+│   │   ├── context/
+│   │   │   └── CurrencyContext.jsx
+│   │   ├── App.jsx
+│   │   └── main.jsx
+│   ├── package.json
+│   └── vite.config.js
+├── README.md
+├── DEPENDENCIES.md
+├── API.md
+└── .gitignore
+```
+
+---
+
+## 🛠️ Technology Stack
+
+### Frontend
+- **React 18.3.1** - UI library
+- **Material-UI (MUI)** - Component library with Material Design
+- **React Router DOM** - Client-side routing
+- **Leaflet + React-Leaflet** - Interactive maps
+- **Vite** - Build tool and dev server
+
+### Features
+- Context API for global state management (Currency)
+- localStorage for data persistence
+- Responsive design (mobile-first)
+- Professional UI with consistent color scheme
+
+### Color Scheme
+- **Primary Color**: #1976D2 (Dark Blue)
+- **Secondary Color**: #42A5F5 (Light Blue)
+- **Text**: #212121, #666, #555
+- **Backgrounds**: #f5f5f5, #fafafa
+
+---
+
+## 📝 Usage Guide
+
+### Creating an Event
+
+1. Click **Event Planner** in the sidebar
+2. Fill in event details:
+   - Event name and description
+   - Date and time
+   - Location (autocomplete available)
+   - Guest count
+   - Budget
+3. Click **Save Event** to persist
+
+### Checking Weather
+
+1. Go to **Weather Forecast**
+2. Enter a location (e.g., "Sydney, Australia")
+3. Select temperature unit (Celsius/Fahrenheit)
+4. View:
+   - Interactive map with location marker
+   - Real-time weather conditions
+   - Temperature, humidity, wind speed, pressure
+
+### Managing Budget
+
+1. Navigate to **Budget Manager**
+2. View total event budget
+3. See cost breakdown by category:
+   - Venue
+   - Catering
+   - Decorations
+   - Entertainment
+   - Photography
+   - Transport
+4. Budget percentages update automatically
+
+### Setting Preferences
+
+1. Click **Settings** in the sidebar
+2. Select your preferred currency:
+   - USD ($) - US Dollar
+   - EUR (€) - Euro
+   - AUD (A$) - Australian Dollar
+   - JPY (¥) - Japanese Yen
+   - CAD (C$) - Canadian Dollar
+   - NZD (NZ$) - New Zealand Dollar
+3. Currency displays across all pages automatically
+
+---
+
+## 🗺️ Supported Weather Locations
+
+| City | Country | Coordinates |
+|------|---------|-------------|
+| Sydney | Australia | -33.8688, 151.2093 |
+| New York | USA | 40.7128, -74.0060 |
+| London | UK | 51.5074, -0.1278 |
+| Tokyo | Japan | 35.6762, 139.6503 |
+| Paris | France | 48.8566, 2.3522 |
+
+### Search Format
+Accepts multiple formats:
+- `Sydney`
+- `Sydney, Australia`
+- `New York, USA`
+- `London, UK`
+
+---
+
+## 💱 Supported Currencies
+
+| Code | Symbol | Full Name |
+|------|--------|-----------|
+| USD | $ | US Dollar |
+| EUR | € | Euro |
+| AUD | A$ | Australian Dollar |
+| JPY | ¥ | Japanese Yen |
+| CAD | C$ | Canadian Dollar |
+| NZD | NZ$ | New Zealand Dollar |
+
+**Note:** Currencies are stored in `localStorage` and persist across browser sessions.
+
+---
+
+## 🔧 Configuration
+
+### Environment Variables (Optional Backend)
+
+Create `.env` file in project root:
+```env
+REACT_APP_API_URL=http://localhost:5000
+REACT_APP_WEATHER_API_KEY=your_key_here
+```
+
+### Vite Configuration
+
+Located in `frontend/vite.config.js`:
+```javascript
+import react from '@vitejs/plugin-react'
+
+export default {
+  plugins: [react()],
+  server: {
+    port: 5173,
+    strictPort: false,
+  },
+}
+```
+
+---
+
+## 🧪 Testing
+
+### Run Development Server
+```bash
+cd frontend
+npm run dev
+```
+
+### Build for Production
+```bash
+npm run build
+```
+
+### Preview Production Build
+```bash
+npm run preview
+```
+
+---
+
+## 📚 Component Documentation
+
+### CurrencyContext
+Provides global currency state management.
+
+**Usage:**
+```javascript
+import { useCurrency } from '../context/CurrencyContext'
+
+function MyComponent() {
+  const { currency, setCurrency, getCurrencySymbol } = useCurrency()
+  
+  return <div>{getCurrencySymbol()} 1000</div>
+}
+```
+
+**Available Methods:**
+- `currency` - Current selected currency
+- `setCurrency(curr)` - Update currency
+- `getCurrencySymbol()` - Get currency symbol
+- `getCurrencyLabel()` - Get currency label
+- `getCurrencyName()` - Get currency full name
+- `currencyOptions` - Array of all currency options
+
+### Sidebar Component
+Navigation sidebar with active page highlighting.
+
+**Features:**
+- Active route highlighting
+- Responsive collapse/expand
+- Icon support
+- Two-section menu (Main & Other)
+
+### Weather Page
+Interactive weather forecasting with maps.
+
+**Features:**
+- Location search with autocomplete suggestions
+- OpenStreetMap integration
+- Temperature unit toggle
+- Real-time weather display
+- Error handling and user guidance
+
+---
+
+## 🐛 Troubleshooting
+
+### Issue: Map not displaying
+```bash
+# Verify leaflet installation
+npm list react-leaflet leaflet
+
+# Reinstall if needed
+npm install react-leaflet@4.2.1 leaflet@1.9.4
+```
+
+### Issue: Currency not persisting
+- Check browser localStorage is enabled
+- Verify CurrencyProvider wraps your app
+- Check browser console for errors
+
+### Issue: Weather search not working
+- Verify location name matches supported cities
+- Try full format: "Sydney, Australia"
+- Check browser console for error messages
+
+### Issue: Icons not displaying
+```bash
+npm install @mui/icons-material@latest
+```
+
+---
+
+## 📋 Browser Support
+
+| Browser | Version | Status |
+|---------|---------|--------|
+| Chrome | 90+ | ✅ Full support |
+| Firefox | 88+ | ✅ Full support |
+| Safari | 14+ | ✅ Full support |
+| Edge | 90+ | ✅ Full support |
+| Mobile Chrome | Latest | ✅ Responsive |
+| Mobile Safari | Latest | ✅ Responsive |
+
+---
+
+## 🔐 Security Notes
+
+- **localStorage**: Used only for non-sensitive user preferences
+- **API Keys**: Should be stored in backend environment variables
+- **CORS**: Configure for production environment
+- **Input Validation**: Implement server-side validation
+
+---
+
+## 📝 License
+
+This project is licensed under the MIT License - see LICENSE.md for details.
+
+---
+
+## 👥 Contributing
+
+Contributions are welcome! Please follow these steps:
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/AmazingFeature`)
+3. Commit changes (`git commit -m 'Add AmazingFeature'`)
+4. Push to branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
+
+---
+
+## 📞 Support
+
+For issues and feature requests, please use the [GitHub Issues](https://github.com/yourusername/issues) page.
+
+---
+
+**Last Updated:** September 27, 2026  
+**Version:** 1.0.0  
+**Status:** Production Ready
