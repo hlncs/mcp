@@ -108,7 +108,7 @@ Complete list of all project dependencies, their purposes, and installation inst
 
 ### Basic Installation
 ```bash
-cd /Users/hien.luong/Projects/AI/mcp/frontend
+cd /path/to//Projects/AI/mcp/frontend
 npm install
 ```
 
@@ -190,7 +190,7 @@ pytest-cov==4.1.0
 
 ### Installation
 ```bash
-cd /Users/hien.luong/Projects/AI/mcp/backend
+cd /path/to//Projects/AI/mcp/backend
 python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt

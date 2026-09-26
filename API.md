@@ -25,7 +25,7 @@ open http://localhost:8000/docs
 ## Commit Documentation
 
 ```bash
-cd /Users/hien.luong/Projects/AI/mcp
+cd /path/to//Projects/AI/mcp
 
 git add API.md
 git commit -m "docs: Add comprehensive API documentation
