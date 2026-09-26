@@ -1,387 +1,410 @@
-# Event Management Suite
+# Event Planning MCP Server
 
-A comprehensive web application for planning and managing events with weather forecasting, budget tracking, and vendor management capabilities.
+Advanced event planning system with Model Context Protocol (MCP) integration, real-time SSE updates, and comprehensive observability.
 
-## 🎯 Features
+## Features
 
-### 1. **Event Planner**
-- Create and manage event details
-- Set event dates, locations, and guest count
-- Budget planning and tracking
-- Real-time event information display
+✅ **MCP Integration**
+- 4 built-in MCP tools for event planning
+- Tool discovery and execution
+- Extensible tool framework
 
-### 2. **Weather Forecast**
-- Search for locations (Sydney, New York, London, Tokyo, Paris)
-- Interactive OpenStreetMap display with location markers
-- Temperature unit selection (Celsius/Fahrenheit)
-- Weather details: temperature, humidity, wind speed, pressure, conditions
-- Auto-temperature conversion based on selected unit
+✅ **Real-time Updates**
+- Server-Sent Events (SSE) for plan progress
+- Event streaming for status updates
+- Live progress tracking
 
-### 3. **Budget Manager**
-- Track event expenses by category
-- Visual budget breakdown with progress bars
-- Currency support: USD, EUR, AUD, JPY, CAD, NZD
-- Budget allocation percentages
-- Currency preference persists across all pages
+✅ **Full Observability Stack**
+- **Distributed Tracing**: Jaeger for request flow visualization
+- **Metrics**: Prometheus for time-series metrics collection
+- **Dashboards**: Grafana for visualization
+- **Logging**: Structured JSON logging with structlog
 
-### 4. **Services**
-- Browse vendors and service providers
-- Service categorization and filtering
-- Contact and pricing information
-- Integration with budget tracking
+✅ **Production Ready**
+- OpenTelemetry instrumentation
+- Error tracking and reporting
+- Performance monitoring
+- Request tracing with correlation IDs
 
-### 5. **Settings**
-- Global currency preference (USD, EUR, AUD, JPY, CAD, NZD)
-- Persistent user preferences (localStorage)
-- Responsive configuration interface
-
-### 6. **Navigation**
-- Persistent sidebar navigation
-- Active page highlighting
-- Quick access to all features
-- Responsive mobile layout
-
----
-
-## 🚀 Getting Started
+## Quick Start
 
 ### Prerequisites
-- **Node.js**: v16+ or v18+
-- **npm**: v8+
-- **Browser**: Modern browser with ES6 support
 
-### Installation
+- Python 3.14.6
+- Docker & Docker Compose
+- curl/jq for testing
 
-#### 1. Clone the Repository
+### 1. Start Observability Stack
+
 ```bash
-git clone https://github.com/yourusername/event-management-suite.git
-cd event-management-suite
+docker-compose up -d
 ```
 
-#### 2. Install Frontend Dependencies
+This starts:
+- **Jaeger** (http://localhost:16686) - Distributed tracing
+- **Prometheus** (http://localhost:9090) - Metrics storage
+- **Grafana** (http://localhost:3000) - Dashboards
+
+### 2. Start API Server
+
 ```bash
-cd frontend
-npm install
+python -m uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-#### 3. Install Map & Weather Dependencies
+### 3. Create Event Plan
+
 ```bash
-# Leaflet for maps (compatible with React 18)
-npm install react-leaflet@4.2.1 leaflet@1.9.4
+curl -X POST http://localhost:8000/plan/create \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "Wedding",
+    "event_date": "2026-12-15",
+    "event_location": "Paris",
+    "num_people": 150,
+    "budget": 50000
+  }' | jq
 ```
 
-#### 4. Start Development Server
-```bash
-npm run dev
-```
+### 4. View Traces
 
-Open [http://localhost:5173](http://localhost:5173) in your browser.
+Visit http://localhost:16686 to see distributed traces.
 
 ---
 
-## 📦 Project Structure
+## Architecture
 
 ```
-event-management-suite/
-├── frontend/
-│   ├── src/
-│   │   ├── components/
-│   │   │   ├── Navbar.jsx
-│   │   │   └── Sidebar.jsx
-│   │   ├── pages/
-│   │   │   ├── HomePage.jsx
-│   │   │   ├── EventPlannerPage.jsx
-│   │   │   ├── WeatherPage.jsx
-│   │   │   ├── BudgetPage.jsx
-│   │   │   ├── ServicesPage.jsx
-│   │   │   └── SettingsPage.jsx
-│   │   ├── context/
-│   │   │   └── CurrencyContext.jsx
-│   │   ├── App.jsx
-│   │   └── main.jsx
-│   ├── package.json
-│   └── vite.config.js
-├── README.md
-├── DEPENDENCIES.md
-├── API.md
-└── .gitignore
+┌─────────────────────────┐
+│   Event Planning API    │
+│  (FastAPI + OpenTel)    │
+└────────┬────────────────┘
+         │
+    ┌────┴────┬──────────┬──────────┐
+    │          │          │          │
+    ▼          ▼          ▼          ▼
+┌────────┐ ┌──────────┐ ┌──────┐ ┌────────┐
+│ Jaeger │ │Prometheus│ │Grafana│ │Stdout  │
+│Tracing │ │ Metrics  │ │ UI   │ │ Logs   │
+└────────┘ └──────────┘ └──────┘ └────────┘
 ```
 
 ---
 
-## 🛠️ Technology Stack
+## API Endpoints
 
-### Frontend
-- **React 18.3.1** - UI library
-- **Material-UI (MUI)** - Component library with Material Design
-- **React Router DOM** - Client-side routing
-- **Leaflet + React-Leaflet** - Interactive maps
-- **Vite** - Build tool and dev server
-
-### Features
-- Context API for global state management (Currency)
-- localStorage for data persistence
-- Responsive design (mobile-first)
-- Professional UI with consistent color scheme
-
-### Color Scheme
-- **Primary Color**: #1976D2 (Dark Blue)
-- **Secondary Color**: #42A5F5 (Light Blue)
-- **Text**: #212121, #666, #555
-- **Backgrounds**: #f5f5f5, #fafafa
-
----
-
-## 📝 Usage Guide
-
-### Creating an Event
-
-1. Click **Event Planner** in the sidebar
-2. Fill in event details:
-   - Event name and description
-   - Date and time
-   - Location (autocomplete available)
-   - Guest count
-   - Budget
-3. Click **Save Event** to persist
-
-### Checking Weather
-
-1. Go to **Weather Forecast**
-2. Enter a location (e.g., "Sydney, Australia")
-3. Select temperature unit (Celsius/Fahrenheit)
-4. View:
-   - Interactive map with location marker
-   - Real-time weather conditions
-   - Temperature, humidity, wind speed, pressure
-
-### Managing Budget
-
-1. Navigate to **Budget Manager**
-2. View total event budget
-3. See cost breakdown by category:
-   - Venue
-   - Catering
-   - Decorations
-   - Entertainment
-   - Photography
-   - Transport
-4. Budget percentages update automatically
-
-### Setting Preferences
-
-1. Click **Settings** in the sidebar
-2. Select your preferred currency:
-   - USD ($) - US Dollar
-   - EUR (€) - Euro
-   - AUD (A$) - Australian Dollar
-   - JPY (¥) - Japanese Yen
-   - CAD (C$) - Canadian Dollar
-   - NZD (NZ$) - New Zealand Dollar
-3. Currency displays across all pages automatically
-
----
-
-## 🗺️ Supported Weather Locations
-
-| City | Country | Coordinates |
-|------|---------|-------------|
-| Sydney | Australia | -33.8688, 151.2093 |
-| New York | USA | 40.7128, -74.0060 |
-| London | UK | 51.5074, -0.1278 |
-| Tokyo | Japan | 35.6762, 139.6503 |
-| Paris | France | 48.8566, 2.3522 |
-
-### Search Format
-Accepts multiple formats:
-- `Sydney`
-- `Sydney, Australia`
-- `New York, USA`
-- `London, UK`
-
----
-
-## 💱 Supported Currencies
-
-| Code | Symbol | Full Name |
-|------|--------|-----------|
-| USD | $ | US Dollar |
-| EUR | € | Euro |
-| AUD | A$ | Australian Dollar |
-| JPY | ¥ | Japanese Yen |
-| CAD | C$ | Canadian Dollar |
-| NZD | NZ$ | New Zealand Dollar |
-
-**Note:** Currencies are stored in `localStorage` and persist across browser sessions.
-
----
-
-## 🔧 Configuration
-
-### Environment Variables (Optional Backend)
-
-Create `.env` file in project root:
-```env
-REACT_APP_API_URL=http://localhost:5000
-REACT_APP_WEATHER_API_KEY=your_key_here
+### Health Check
+```
+GET /health
 ```
 
-### Vite Configuration
+### Plan Management
+```
+POST /plan/create              # Create new plan
+GET  /plan/{plan_id}           # Get plan details
+GET  /plans                    # List all plans
+GET  /plan/{plan_id}/events    # Stream plan events (SSE)
+```
 
-Located in `frontend/vite.config.js`:
-```javascript
-import react from '@vitejs/plugin-react'
+### MCP Tools
+```
+GET  /mcp/tools                # List available tools
+POST /mcp/tools/{tool_name}    # Execute tool
+```
 
-export default {
-  plugins: [react()],
-  server: {
-    port: 5173,
-    strictPort: false,
-  },
+### Metrics
+```
+GET  /metrics                  # Application metrics (JSON)
+GET  /metrics/prometheus       # Prometheus format metrics
+```
+
+---
+
+## Project Structure
+
+```
+mcp/
+├── backend/
+│   ├── main.py                 # FastAPI application
+│   ├── mcp_server.py          # MCP tools implementation
+│   ├── sse_manager.py         # Server-Sent Events manager
+│   └── config/
+│       ├── opentelemetry_config.py    # Tracing setup
+│       ├── prometheus_config.py       # Metrics definitions
+│       ├── tracing.py                 # Tracing utilities
+│       ├── observability_middleware.py # HTTP middleware
+│       └── __init__.py
+├── docs/
+│   ├── OBSERVABILITY.md       # Detailed observability guide
+│   └── QUICK_START.md         # Getting started guide
+├── docker-compose.yml         # Observability stack
+├── prometheus.yml             # Prometheus configuration
+└── requirements.txt           # Python dependencies
+```
+
+---
+
+## Documentation
+
+- **[Quick Start](./docs/QUICK_START.md)** - Get running in 5 minutes
+- **[Observability Guide](./docs/OBSERVABILITY.md)** - Complete monitoring guide
+  - Jaeger distributed tracing
+  - Prometheus metrics queries
+  - Grafana dashboards
+  - Structured logging
+  - Troubleshooting
+
+---
+
+## Observability
+
+### Distributed Tracing (Jaeger)
+
+View request execution flow with detailed timing:
+
+```
+http://localhost:16686
+```
+
+**Features:**
+- Request flow visualization
+- Span timing and duration
+- Error tracking
+- Correlation IDs
+
+### Metrics (Prometheus)
+
+Query time-series metrics:
+
+```
+http://localhost:9090
+```
+
+**Key Metrics:**
+- `http_requests_total` - Total requests by endpoint
+- `http_request_duration_seconds` - Request latency (p50, p95, p99)
+- `mcp_tool_calls_total` - MCP tool executions
+- `plans_created_total` - Plans created
+- `active_plans` - Active plans by status
+
+### Dashboards (Grafana)
+
+Pre-built dashboards for visualization:
+
+```
+http://localhost:3000
+Username: admin
+Password: admin
+```
+
+**Default Dashboard:**
+- HTTP request rate and latency
+- Error rate and breakdown
+- MCP tool performance
+- Plan status distribution
+
+### Structured Logging
+
+All logs are output as JSON for easy parsing:
+
+```json
+{
+  "event": "plan_created",
+  "plan_id": "uuid",
+  "query": "Wedding",
+  "timestamp": "2026-09-27T16:15:52.123Z",
+  "trace_id": "correlation-id"
 }
 ```
 
 ---
 
-## 🧪 Testing
+## Examples
 
-### Run Development Server
+### Create Plan and Stream Progress
+
 ```bash
-cd frontend
-npm run dev
+# Terminal 1: Create plan
+PLAN_ID=$(curl -s -X POST http://localhost:8000/plan/create \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "Wedding",
+    "event_date": "2026-12-15",
+    "event_location": "Paris",
+    "num_people": 150,
+    "budget": 50000
+  }' | jq -r '.plan_id')
+
+# Terminal 2: Stream events
+curl http://localhost:8000/plan/$PLAN_ID/events
 ```
 
-### Build for Production
+### Execute MCP Tool
+
 ```bash
-npm run build
+curl -X POST http://localhost:8000/mcp/tools/create_plan \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "Birthday Party",
+    "event_date": "2026-11-15",
+    "event_location": "San Francisco",
+    "num_people": 50,
+    "budget": 2000
+  }' | jq
 ```
 
-### Preview Production Build
+### Query Metrics
+
 ```bash
-npm run preview
+# Request rate (requests/second)
+curl 'http://localhost:9090/api/query?query=rate(http_requests_total[5m])'
+
+# p95 latency
+curl 'http://localhost:9090/api/query?query=histogram_quantile(0.95,http_request_duration_seconds)'
+
+# Error rate
+curl 'http://localhost:9090/api/query?query=rate(http_errors_total[5m])'
 ```
 
 ---
 
-## 📚 Component Documentation
+## Development
 
-### CurrencyContext
-Provides global currency state management.
+### Environment Variables
 
-**Usage:**
-```javascript
-import { useCurrency } from '../context/CurrencyContext'
-
-function MyComponent() {
-  const { currency, setCurrency, getCurrencySymbol } = useCurrency()
-  
-  return <div>{getCurrencySymbol()} 1000</div>
-}
-```
-
-**Available Methods:**
-- `currency` - Current selected currency
-- `setCurrency(curr)` - Update currency
-- `getCurrencySymbol()` - Get currency symbol
-- `getCurrencyLabel()` - Get currency label
-- `getCurrencyName()` - Get currency full name
-- `currencyOptions` - Array of all currency options
-
-### Sidebar Component
-Navigation sidebar with active page highlighting.
-
-**Features:**
-- Active route highlighting
-- Responsive collapse/expand
-- Icon support
-- Two-section menu (Main & Other)
-
-### Weather Page
-Interactive weather forecasting with maps.
-
-**Features:**
-- Location search with autocomplete suggestions
-- OpenStreetMap integration
-- Temperature unit toggle
-- Real-time weather display
-- Error handling and user guidance
-
----
-
-## 🐛 Troubleshooting
-
-### Issue: Map not displaying
 ```bash
-# Verify leaflet installation
-npm list react-leaflet leaflet
-
-# Reinstall if needed
-npm install react-leaflet@4.2.1 leaflet@1.9.4
+# Logging output format
+ENV=dev    # Colored console output
+ENV=prod   # JSON output (default)
 ```
 
-### Issue: Currency not persisting
-- Check browser localStorage is enabled
-- Verify CurrencyProvider wraps your app
-- Check browser console for errors
+### Running Tests
 
-### Issue: Weather search not working
-- Verify location name matches supported cities
-- Try full format: "Sydney, Australia"
-- Check browser console for error messages
-
-### Issue: Icons not displaying
 ```bash
-npm install @mui/icons-material@latest
+pytest tests/ -v
+```
+
+### Code Quality
+
+```bash
+# Format code
+black backend/
+
+# Lint
+pylint backend/
+
+# Type checking
+mypy backend/
 ```
 
 ---
 
-## 📋 Browser Support
+## Troubleshooting
 
-| Browser | Version | Status |
-|---------|---------|--------|
-| Chrome | 90+ | ✅ Full support |
-| Firefox | 88+ | ✅ Full support |
-| Safari | 14+ | ✅ Full support |
-| Edge | 90+ | ✅ Full support |
-| Mobile Chrome | Latest | ✅ Responsive |
-| Mobile Safari | Latest | ✅ Responsive |
+### Jaeger not showing traces?
 
----
+```bash
+docker-compose restart jaeger
+curl http://localhost:16686/api/services
+```
 
-## 🔐 Security Notes
+### High error rate?
 
-- **localStorage**: Used only for non-sensitive user preferences
-- **API Keys**: Should be stored in backend environment variables
-- **CORS**: Configure for production environment
-- **Input Validation**: Implement server-side validation
+1. Check logs: `docker-compose logs backend`
+2. View errors in Jaeger: http://localhost:16686 (filter `error=true`)
+3. Query Prometheus: `http_errors_total`
 
----
+### API not starting?
 
-## 📝 License
+```bash
+# Check for port conflicts
+lsof -i :8000
 
-This project is licensed under the MIT License - see LICENSE.md for details.
+# Check dependencies
+pip install -r requirements.txt
 
----
-
-## 👥 Contributing
-
-Contributions are welcome! Please follow these steps:
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit changes (`git commit -m 'Add AmazingFeature'`)
-4. Push to branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
+# Restart with more logging
+PYTHONUNBUFFERED=1 python -m uvicorn backend.main:app --log-level debug
+```
 
 ---
 
-## 📞 Support
+## Performance
 
-For issues and feature requests, please use the [GitHub Issues](https://github.com/yourusername/issues) page.
+### SLOs (Service Level Objectives)
+
+| Metric | Target |
+|--------|--------|
+| Availability | 99.9% |
+| p95 Latency | < 200ms |
+| p99 Latency | < 500ms |
+| Error Rate | < 0.1% |
+| Plan Success | > 99% |
+
+### Optimization Tips
+
+1. Monitor Jaeger for slow traces
+2. Use Grafana to identify bottlenecks
+3. Profile MCP tool execution
+4. Optimize database queries
+5. Configure caching strategies
 
 ---
 
-**Last Updated:** September 27, 2026  
-**Version:** 1.0.0  
-**Status:** Production Ready
+## Production Deployment
+
+### Docker Build
+
+```bash
+docker build -t event-planning-mcp:latest .
+```
+
+### Kubernetes
+
+See `k8s/` directory for Kubernetes manifests:
+```bash
+kubectl apply -f k8s/
+```
+
+### Environment Setup
+
+```bash
+# Set secure configuration
+export JAEGER_HOST=jaeger.production.svc.cluster.local
+export PROMETHEUS_URL=http://prometheus:9090
+export GRAFANA_URL=http://grafana:3000
+```
+
+---
+
+## Contributing
+
+1. Create feature branch: `git checkout -b feature/my-feature`
+2. Make changes and test locally
+3. Run tests: `pytest`
+4. Submit pull request
+
+---
+
+## License
+
+MIT License - See LICENSE file
+
+---
+
+## Support
+
+For issues and questions:
+- Check [OBSERVABILITY.md](./docs/OBSERVABILITY.md)
+- Review error traces in Jaeger
+- Query metrics in Prometheus
+- Check logs in stdout
+
+---
+
+## Links
+
+- **GitHub**: https://github.com/user/mcp
+- **Documentation**: ./docs/
+- **Issues**: https://github.com/user/mcp/issues
+- **OpenTelemetry**: https://opentelemetry.io/
+- **MCP Spec**: https://modelcontextprotocol.io/
