@@ -5,6 +5,7 @@ from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 import logging
 from backend.monitoring import metrics_collector
+from config.logging_config import set_trace_context
 
 logger = logging.getLogger('api')
 
@@ -55,13 +56,13 @@ class MetricsMiddleware(BaseHTTPMiddleware):
                 extra={
                     'http_method': request.method,
                     'http_path': request.url.path,
+                    'http_status': 500,
                     'duration_ms': duration_ms,
                 },
                 exc_info=True
             )
             
             raise
-
 
 class TracingMiddleware(BaseHTTPMiddleware):
     """Middleware for distributed tracing"""
@@ -70,6 +71,9 @@ class TracingMiddleware(BaseHTTPMiddleware):
         # Extract or create trace ID
         trace_id = request.headers.get('X-Trace-ID', str(uuid.uuid4()))
         request_id = request.headers.get('X-Request-ID', str(uuid.uuid4()))
+        
+        # Set trace context for logging
+        set_trace_context(trace_id, request_id)
         
         # Add trace headers to request state
         request.state.trace_id = trace_id
@@ -100,8 +104,8 @@ class TracingMiddleware(BaseHTTPMiddleware):
                 },
                 exc_info=True
             )
+            
             raise
-
 
 class LoggingMiddleware(BaseHTTPMiddleware):
     """Middleware for detailed request/response logging"""

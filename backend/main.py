@@ -1,39 +1,57 @@
 """
 FastAPI application with OpenTelemetry observability
 """
+import os
+import sys
+import logging
+from datetime import datetime, timezone
+from uuid import uuid4
+
+# Configure logging BEFORE importing anything else
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+# Add backend to path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# Initialize OpenTelemetry BEFORE creating FastAPI app
+try:
+    from config.opentelemetry_config import init_otel
+    otel = init_otel(service_name="event-planning-api")
+except Exception as e:
+    logger.error(f"Failed to import OpenTelemetry config: {e}")
+    otel = None
+
+# Now import FastAPI
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
-from datetime import datetime, timezone
 import asyncio
-from uuid import uuid4
-import logging
-import sys
-import os
-
-# Setup structured logging
-import structlog
-structlog.configure(
-    processors=[
-        structlog.processors.JSONRenderer()
-    ],
-    context_class=dict,
-    logger_factory=structlog.PrintLoggerFactory(),
-)
-logger = structlog.get_logger()
 
 # Initialize FastAPI
 app = FastAPI(
-    title="MCP API",
+    title="Event Planning MCP API",
     description="Model Context Protocol with Observability",
-    version="0.1.0"
+    version="1.0.0",
+    docs_url="/docs",
+    openapi_url="/openapi.json"
 )
+
+# Initialize OpenTelemetry with FastAPI
+if otel:
+    otel.initialize(app)
+    logger.info("✅ OpenTelemetry initialized successfully")
+else:
+    logger.warning("⚠️  OpenTelemetry not available")
 
 # Get allowed origins from environment
 allowed_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:5173").split(",")
 
-# Add CORS middleware FIRST (before other middleware)
+# Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
@@ -42,32 +60,22 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Add custom middleware (order matters - add metrics FIRST after CORS)
-from backend.middleware import MetricsMiddleware, TracingMiddleware, LoggingMiddleware
-app.add_middleware(LoggingMiddleware)
-app.add_middleware(TracingMiddleware)
-app.add_middleware(MetricsMiddleware)
-
-# Import monitoring
-from backend.monitoring import metrics_collector
-
 # Models
 class HealthResponse(BaseModel):
     status: str
     message: str
     python_version: str
+    opentelemetry_enabled: bool
 
 class PlanRequest(BaseModel):
-    """Request to create a plan"""
     query: str
-    context: Optional[dict] = {}
+    context: Optional[dict] = None
     event_date: Optional[str] = None
     event_location: Optional[str] = None
     num_people: Optional[int] = 0
     budget: Optional[float] = 0.0
 
 class PlanResponse(BaseModel):
-    """Response with plan details"""
     plan_id: str
     status: str
     query: str
@@ -77,114 +85,45 @@ class PlanResponse(BaseModel):
     num_people: Optional[int] = 0
     budget: Optional[float] = 0.0
     progress: Optional[int] = 0
-    result: Optional[dict] = {}
+    result: Optional[dict] = None
     updated_at: Optional[str] = None
 
-class PlanStatus(BaseModel):
-    """Plan status details"""
-    plan_id: str
-    status: str
-    progress: int
-    result: dict = {}
-    created_at: str
-    updated_at: str
-
-# In-memory storage (replace with database later)
+# In-memory storage
 plans_db = {}
 
-# Background tasks
-async def process_plan(plan_id: str):
-    """Simulate plan processing in background"""
-    try:
-        if plan_id not in plans_db:
-            return
-        
-        plan = plans_db[plan_id]
-        
-        # Simulate processing steps
-        for progress in [25, 50, 75, 100]:
-            await asyncio.sleep(2)  # Simulate work
-            
-            plan["progress"] = progress
-            plan["updated_at"] = datetime.now(timezone.utc).isoformat()
-            
-            logger.info(
-                "plan_processing",
-                plan_id=plan_id,
-                progress=progress
-            )
-        
-        # Mark as completed with results
-        plan["status"] = "completed"
-        plan["progress"] = 100
-        plan["updated_at"] = datetime.now(timezone.utc).isoformat()
-        plan["result"] = {
-            "summary": f"Plan for: {plan['query']}\nDate: {plan['event_date']}\nLocation: {plan['event_location']}\nGuests: {plan['num_people']}\nBudget: ${plan['budget']}",
-            "steps": [
-                "Step 1: Initial planning",
-                "Step 2: Resource allocation",
-                "Step 3: Timeline creation",
-                "Step 4: Budget breakdown"
-            ],
-            "estimated_cost": plan['budget'],
-            "duration_days": 30,
-            "event_details": {
-                "event_date": plan['event_date'],
-                "event_location": plan['event_location'],
-                "num_people": plan['num_people'],
-                "budget": plan['budget']
-            }
-        }
-        
-        logger.info(
-            "plan_completed",
-            plan_id=plan_id
-        )
-    
-    except Exception as e:
-        plan = plans_db.get(plan_id)
-        if plan:
-            plan["status"] = "failed"
-            plan["result"] = {"error": str(e)}
-        
-        logger.error(
-            "plan_processing_failed",
-            plan_id=plan_id,
-            error=str(e),
-            exc_info=True
-        )
+# Routes
+@app.get("/", tags=["Root"])
+async def root():
+    """Root endpoint"""
+    return {
+        "message": "Welcome to Event Planning MCP API",
+        "docs": "/docs",
+        "health": "/health"
+    }
 
-@app.get("/health", response_model=HealthResponse)
+@app.get("/health", response_model=HealthResponse, tags=["Health"])
 async def health_check():
     """Health check endpoint"""
-    logger.info("health_check", endpoint="/health")
     return {
         "status": "healthy",
         "message": "API is running",
-        "python_version": f"{sys.version.split()[0]}"
+        "python_version": f"{sys.version.split()[0]}",
+        "opentelemetry_enabled": otel is not None
     }
 
-@app.get("/")
-async def root():
-    """Root endpoint"""
-    logger.info("root", endpoint="/")
-    return {"message": "Welcome to MCP API"}
-
-@app.post("/plan", response_model=PlanResponse)
-@app.post("/plan/create", response_model=PlanResponse)
+@app.post("/plan/create", response_model=PlanResponse, tags=["Plans"])
 async def create_plan(request: PlanRequest):
     """Create a new planning request"""
     plan_id = str(uuid4())
     now = datetime.now(timezone.utc).isoformat()
     
     logger.info(
-        "create_plan",
-        plan_id=plan_id,
-        query=request.query,
-        event_date=request.event_date,
-        event_location=request.event_location,
-        num_people=request.num_people,
-        budget=request.budget
+        f"Creating plan: {plan_id}",
+        extra={
+            "plan_id": plan_id,
+            "query": request.query,
+            "location": request.event_location
+        }
     )
     
     plans_db[plan_id] = {
@@ -195,100 +134,88 @@ async def create_plan(request: PlanRequest):
         "event_location": request.event_location,
         "num_people": request.num_people,
         "budget": request.budget,
-        "context": request.context,
+        "context": request.context or {},
         "progress": 0,
-        "result": {},
+        "result": None,
         "created_at": now,
         "updated_at": now
     }
     
-    # Start background processing task
+    # Start background processing
     asyncio.create_task(process_plan(plan_id))
     
-    return {
-        "plan_id": plan_id,
-        "status": "processing",
-        "query": request.query,
-        "event_date": request.event_date,
-        "event_location": request.event_location,
-        "num_people": request.num_people,
-        "budget": request.budget,
-        "created_at": now
-    }
+    return PlanResponse(**plans_db[plan_id])
 
-@app.get("/plan/{plan_id}", response_model=PlanResponse)
+@app.get("/plan/{plan_id}", response_model=PlanResponse, tags=["Plans"])
 async def get_plan(plan_id: str):
     """Get a specific plan"""
+    logger.info(f"Retrieving plan: {plan_id}")
+    
     if plan_id not in plans_db:
-        logger.warning("get_plan_not_found", plan_id=plan_id)
-        raise HTTPException(status_code=404, detail="Plan not found")
+        logger.warning(f"Plan not found: {plan_id}")
+        raise HTTPException(status_code=404, detail=f"Plan {plan_id} not found")
     
-    plan = plans_db[plan_id]
-    logger.info("get_plan", plan_id=plan_id, status=plan["status"])
-    
-    return {
-        "plan_id": plan["plan_id"],
-        "status": plan["status"],
-        "query": plan["query"],
-        "event_date": plan.get("event_date"),
-        "event_location": plan.get("event_location"),
-        "num_people": plan.get("num_people", 0),
-        "budget": plan.get("budget", 0.0),
-        "progress": plan.get("progress", 0),
-        "result": plan.get("result", {}),
-        "created_at": plan["created_at"],
-        "updated_at": plan.get("updated_at", plan["created_at"])
-    }
+    return PlanResponse(**plans_db[plan_id])
 
-@app.get("/plans")
+@app.get("/plans", tags=["Plans"])
 async def list_plans():
     """List all plans"""
-    logger.info("list_plans", count=len(plans_db))
+    logger.info(f"Listing all plans (total: {len(plans_db)})")
+    
     return {
         "total": len(plans_db),
         "plans": list(plans_db.values())
     }
 
-@app.get("/metrics")
+@app.get("/metrics", tags=["Metrics"])
 async def get_metrics():
     """Get system metrics"""
-    logger.info("metrics_request")
-    return metrics_collector.get_metrics()
-
-@app.post("/weather")
-async def get_weather(request: PlanRequest):
-    """Get weather information for event planning"""
-    logger.info("get_weather", query=request.query)
-    
-    # Mock weather data for now
     return {
-        "location": "San Francisco",
-        "temperature": 72,
-        "condition": "Partly Cloudy",
-        "forecast": [
-            {"day": "Monday", "high": 75, "low": 62, "condition": "Sunny"},
-            {"day": "Tuesday", "high": 68, "low": 59, "condition": "Cloudy"},
-            {"day": "Wednesday", "high": 70, "low": 60, "condition": "Rainy"}
-        ]
+        "total_plans": len(plans_db),
+        "plans_by_status": {
+            "processing": sum(1 for p in plans_db.values() if p["status"] == "processing"),
+            "completed": sum(1 for p in plans_db.values() if p["status"] == "completed"),
+            "failed": sum(1 for p in plans_db.values() if p["status"] == "failed")
+        }
     }
 
-@app.get("/weather/{location}")
-async def get_weather_by_location(location: str):
-    """Get weather for a specific location"""
-    logger.info("get_weather_by_location", location=location)
-    
-    # Mock weather data - replace with real API call later
-    return {
-        "location": location,
-        "temperature": 72,
-        "condition": "Partly Cloudy",
-        "forecast": [
-            {"day": "Monday", "high": 75, "low": 62, "condition": "Sunny"},
-            {"day": "Tuesday", "high": 68, "low": 59, "condition": "Cloudy"},
-            {"day": "Wednesday", "high": 70, "low": 60, "condition": "Rainy"}
+# Background task
+async def process_plan(plan_id: str):
+    """Simulate plan processing"""
+    try:
+        plan = plans_db.get(plan_id)
+        if not plan:
+            return
+        
+        steps = [
+            "Step 1: Initial planning",
+            "Step 2: Resource allocation",
+            "Step 3: Timeline creation",
+            "Step 4: Budget breakdown"
         ]
-    }
+        
+        for i, step in enumerate(steps):
+            await asyncio.sleep(1)  # Simulate work
+            plan["progress"] = int((i + 1) / len(steps) * 100)
+            plan["updated_at"] = datetime.now(timezone.utc).isoformat()
+        
+        plan["status"] = "completed"
+        plan["result"] = {
+            "steps": steps,
+            "estimated_cost": plan['budget'],
+            "duration_days": 30
+        }
+        
+        logger.info(f"Plan completed: {plan_id}")
+    
+    except Exception as e:
+        logger.error(f"Plan processing failed: {plan_id} - {str(e)}", exc_info=True)
+        plan = plans_db.get(plan_id)
+        if plan:
+            plan["status"] = "failed"
+            plan["result"] = {"error": str(e)}
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    logger.info(f"🚀 Starting server on 0.0.0.0:8000")
+    uvicorn.run(app, host="0.0.0.0", port=8000, reload=True)
