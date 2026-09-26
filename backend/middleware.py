@@ -4,10 +4,64 @@ from typing import Callable
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 import logging
-from config.tracing import tracer, Span
-from config.logging_config import set_trace_context
+from backend.monitoring import metrics_collector
 
 logger = logging.getLogger('api')
+
+class MetricsMiddleware(BaseHTTPMiddleware):
+    """Middleware to record request metrics"""
+    
+    async def dispatch(self, request: Request, call_next: Callable) -> Response:
+        start_time = time.time()
+        
+        try:
+            response = await call_next(request)
+            
+            # Calculate duration in milliseconds
+            duration_ms = (time.time() - start_time) * 1000
+            
+            # Record metrics
+            metrics_collector.record_request(
+                path=request.url.path,
+                method=request.method,
+                status_code=response.status_code,
+                duration_ms=duration_ms
+            )
+            
+            logger.info(
+                f'{request.method} {request.url.path} - {response.status_code}',
+                extra={
+                    'http_method': request.method,
+                    'http_path': request.url.path,
+                    'http_status': response.status_code,
+                    'duration_ms': duration_ms,
+                }
+            )
+            
+            return response
+        
+        except Exception as e:
+            # Record error metrics
+            duration_ms = (time.time() - start_time) * 1000
+            metrics_collector.record_request(
+                path=request.url.path,
+                method=request.method,
+                status_code=500,
+                duration_ms=duration_ms
+            )
+            
+            logger.error(
+                f'{request.method} {request.url.path} - Error: {str(e)}',
+                extra={
+                    'http_method': request.method,
+                    'http_path': request.url.path,
+                    'duration_ms': duration_ms,
+                },
+                exc_info=True
+            )
+            
+            raise
+
 
 class TracingMiddleware(BaseHTTPMiddleware):
     """Middleware for distributed tracing"""
@@ -16,21 +70,6 @@ class TracingMiddleware(BaseHTTPMiddleware):
         # Extract or create trace ID
         trace_id = request.headers.get('X-Trace-ID', str(uuid.uuid4()))
         request_id = request.headers.get('X-Request-ID', str(uuid.uuid4()))
-        
-        # Start trace
-        tracer.start_trace(trace_id)
-        set_trace_context(trace_id, request_id)
-        
-        # Create span for request
-        span = tracer.start_span(
-            f'{request.method} {request.url.path}',
-            tags={
-                'http.method': request.method,
-                'http.url': str(request.url),
-                'http.target': request.url.path,
-                'request_id': request_id,
-            }
-        )
         
         # Add trace headers to request state
         request.state.trace_id = trace_id
@@ -42,33 +81,14 @@ class TracingMiddleware(BaseHTTPMiddleware):
         try:
             response = await call_next(request)
             
-            # Set response tags
-            span.set_tag('http.status_code', response.status_code)
-            
-            # Log request
-            duration_ms = round((time.time() - start_time) * 1000, 2)
-            logger.info(
-                f'{request.method} {request.url.path} - {response.status_code}',
-                extra={
-                    'trace_id': trace_id,
-                    'request_id': request_id,
-                    'http_method': request.method,
-                    'http_path': request.url.path,
-                    'http_status': response.status_code,
-                    'duration_ms': duration_ms,
-                }
-            )
-            
             # Add trace headers to response
             response.headers['X-Trace-ID'] = trace_id
             response.headers['X-Request-ID'] = request_id
-            response.headers['X-Response-Time-Ms'] = str(duration_ms)
+            response.headers['X-Response-Time-Ms'] = str(round((time.time() - start_time) * 1000, 2))
             
             return response
         
         except Exception as e:
-            span.set_error(e)
-            
             logger.error(
                 f'{request.method} {request.url.path} - Error: {str(e)}',
                 extra={
@@ -80,11 +100,8 @@ class TracingMiddleware(BaseHTTPMiddleware):
                 },
                 exc_info=True
             )
-            
             raise
-        
-        finally:
-            tracer.end_span(span)
+
 
 class LoggingMiddleware(BaseHTTPMiddleware):
     """Middleware for detailed request/response logging"""

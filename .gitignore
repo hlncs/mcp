@@ -1,4 +1,4 @@
-# ==================== Python ====================
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
@@ -16,107 +16,56 @@ parts/
 sdist/
 var/
 wheels/
-pip-wheel-metadata/
-share/python-wheels/
 *.egg-info/
 .installed.cfg
 *.egg
-MANIFEST
 
-# ==================== Virtual Environments ====================
+# Virtual environments
 venv/
-ENV/
 env/
+ENV/
 .venv
 
-# ==================== IDE & Editors ====================
+# IDE
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
-.DS_Store
-.project
-.pydevproject
-.settings/
-*.sublime-project
-*.sublime-workspace
-.vim/
 
-# ==================== Logs ====================
-logs/
-*.log
-npm-debug.log*
-pip-log.txt
-pip-delete-this-directory.txt
-
-# ==================== Testing & Coverage ====================
-.tox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-*.py,cover
-.hypothesis/
-.pytest_cache/
-htmlcov/
-
-# ==================== Node.js / Frontend ====================
-node_modules/
-npm-debug.log
-yarn-error.log
-frontend/dist/
-frontend/build/
-.pnp
-.pnp.js
-
-# ==================== Environment Variables ====================
+# Environment variables
 .env
 .env.local
-.env.development.local
-.env.test.local
-.env.production.local
 .env.*.local
 
-# ==================== Database ====================
-*.db
-*.sqlite
-*.sqlite3
-*.sql
+# Logs
+logs/
+*.log
 
-# ==================== OS ====================
+# OS
 .DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
 Thumbs.db
 
-# ==================== Project Specific ====================
-*.gguf
-models/
-downloads/
-temp/
-tmp/
+# Node (frontend)
+frontend/node_modules/
+frontend/dist/
 
-# ==================== LLM Models ====================
-*.bin
-*.safetensors
-.cache/huggingface/
-.ollama/
+# Kubernetes
+k8s-manifests/
 
-# ==================== Docker ====================
-.dockerignore
-docker-compose.override.yml
+# Generated files
+*.yaml.generated
+*.yml.generated
 
-# ==================== Misc ====================
-.ipynb_checkpoints/
-*.ipynb
-.mypy_cache/
-.dmypy.json
-dmypy.json
-.pyre/
-state.json
+# Test coverage
+.coverage
+htmlcov/
+
+# Database
+*.db
+*.sqlite
+
+# Observability
+prometheus-data/
+grafana-data/
+jaeger-data/

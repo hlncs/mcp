@@ -34,26 +34,66 @@ const statusIcons = {
 
 // Default configuration
 const DEFAULT_CONFIG = {
-  timeoutMs: 30000, // 30 seconds
-  warningMs: 10000, // Show warning after 10 seconds
-  checkIntervalMs: 1000, // Check every 1 second
+  timeoutMs: 30000,
+  warningMs: 10000,
+  checkIntervalMs: 1000,
+  maxRetries: 3,
+  retryDelay: 2000, // ms
 }
 
+// Add fallback UI function
+const FallbackUI = ({ error, onRetry }) => (
+  <Box sx={{ textAlign: 'center', py: 4 }}>
+    <ErrorIcon sx={{ fontSize: 60, color: 'error.main', mb: 2 }} />
+    <Typography variant="h6" gutterBottom>
+      Unable to Connect
+    </Typography>
+    <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+      {error || 'The connection could not be established'}
+    </Typography>
+    <Button 
+      variant="contained" 
+      color="primary"
+      onClick={onRetry}
+      startIcon={<RefreshIcon />}
+    >
+      Retry Connection
+    </Button>
+  </Box>
+)
+
+// Add defensive error handler
+const handleConnectionError = (error, context) => {
+  console.error('Connection error:', error)
+  
+  // Different handling based on error type
+  if (error.type === 'TIMEOUT') {
+    return 'Server took too long to respond'
+  } else if (error.type === 'NETWORK') {
+    return 'Network connection failed'
+  } else if (error.type === 'PARSE') {
+    return 'Invalid response from server'
+  } else if (error.type === 'AUTH') {
+    return 'Authentication required'
+  } else {
+    return 'Unexpected error occurred'
+  }
+}
+
+// Main component with better error handling
 export default function EventStreamViewer({ 
   planId,
-  timeoutMs = parseInt(import.meta.env.VITE_SSE_TIMEOUT || DEFAULT_CONFIG.timeoutMs),
-  warningMs = parseInt(import.meta.env.VITE_SSE_WARNING || DEFAULT_CONFIG.warningMs),
+  timeoutMs = DEFAULT_CONFIG.timeoutMs,
+  warningMs = DEFAULT_CONFIG.warningMs,
+  autoRetry = true,
+  maxRetries = DEFAULT_CONFIG.maxRetries,
   onTimeout = null,
   onError = null,
-  autoRetry = true,
-  maxRetries = 3,
 }) {
   const [events, setEvents] = useState([])
   const [isConnected, setIsConnected] = useState(false)
   const [error, setError] = useState(null)
   const [elapsedTime, setElapsedTime] = useState(0)
-  const [isTimeout, setIsTimeout] = useState(false)
-  const [showWarning, setShowWarning] = useState(false)
   const [retryCount, setRetryCount] = useState(0)
   const [isLoading, setIsLoading] = useState(true)
 
@@ -68,8 +108,6 @@ export default function EventStreamViewer({
     if (retryCount < maxRetries) {
       setRetryCount(prev => prev + 1)
       setError(null)
-      setIsTimeout(false)
-      setShowWarning(false)
       setElapsedTime(0)
       setEvents([])
     }
@@ -82,83 +120,67 @@ export default function EventStreamViewer({
     let warningTimer = null
     let elapsedTimer = null
     let eventSource = null
-    let hasReceivedEvent = false
 
     const startConnection = () => {
       try {
-        eventSource = new EventSource(`http://localhost:8000/stream/plan/${planId}`)
+        // Validate planId
+        if (typeof planId !== 'string' || planId.trim().length === 0) {
+          throw new Error('Invalid plan ID')
+        }
+
+        const url = `http://localhost:8000/stream/plan/${encodeURIComponent(planId)}`
+        
+        logger.info(`Connecting to event stream: ${url}`)
+        eventSource = new EventSource(url)
         setIsLoading(true)
         setIsConnected(false)
         setError(null)
-        setIsTimeout(false)
-        setShowWarning(false)
-        hasReceivedEvent = false
 
-        // Set timeout timer
+        // Set timeout
         timeoutTimer = setTimeout(() => {
-          if (!hasReceivedEvent) {
-            setIsTimeout(true)
-            setIsConnected(false)
-            setError(`Connection timeout after ${formatTime(timeoutMs)}`)
-            
-            if (onTimeout) {
-              onTimeout({
-                planId,
-                elapsedTime,
-                retryCount,
-              })
-            }
+          setError(`Connection timeout after ${timeoutMs}ms`)
+          eventSource?.close()
 
-            eventSource?.close()
+          if (onTimeout) {
+            onTimeout({ planId, elapsedTime, retryCount })
+          }
 
-            // Auto-retry if enabled
-            if (autoRetry && retryCount < maxRetries) {
-              setTimeout(retryConnection, 2000)
-            }
+          if (autoRetry && retryCount < maxRetries) {
+            setTimeout(retryConnection, DEFAULT_CONFIG.retryDelay)
           }
         }, timeoutMs)
 
-        // Set warning timer
+        // Set warning
         warningTimer = setTimeout(() => {
-          if (!hasReceivedEvent) {
-            setShowWarning(true)
+          if (events.length === 0) {
+            setError('Server is taking longer than expected')
           }
         }, warningMs)
 
-        // Start elapsed time counter
+        // Track elapsed time
         elapsedTimer = setInterval(() => {
           setElapsedTime(prev => prev + DEFAULT_CONFIG.checkIntervalMs)
         }, DEFAULT_CONFIG.checkIntervalMs)
 
         eventSource.onopen = () => {
+          logger.info('Event stream connected')
           setIsConnected(true)
           setIsLoading(false)
           setError(null)
-          clearTimeout(timeoutTimer)
-          clearTimeout(warningTimer)
+          if (timeoutTimer) clearTimeout(timeoutTimer)
         }
 
         eventSource.onmessage = (event) => {
           try {
-            hasReceivedEvent = true
-            setIsLoading(false)
             const data = JSON.parse(event.data)
             setEvents(prev => [...prev, data])
-            
-            // Clear warnings when first event arrives
-            setShowWarning(false)
-            setIsTimeout(false)
-            
-            // Reset timeout timer on each message
-            if (timeoutTimer) clearTimeout(timeoutTimer)
-            timeoutTimer = setTimeout(() => {
-              setIsTimeout(true)
-              setError(`Connection timeout after ${formatTime(timeoutMs)}`)
-              eventSource?.close()
-            }, timeoutMs)
+            setIsLoading(false)
+            setError(null)
           } catch (err) {
-            console.error('Error parsing event:', err)
-            setError(`Failed to parse event: ${err.message}`)
+            const parseError = new Error(`Failed to parse event: ${err.message}`)
+            logger.error('Parse error:', parseError)
+            setError(handleConnectionError({ type: 'PARSE' }))
+            
             if (onError) {
               onError({
                 type: 'PARSE_ERROR',
@@ -170,18 +192,13 @@ export default function EventStreamViewer({
         }
 
         eventSource.onerror = (err) => {
-          console.error('EventSource error:', err)
+          logger.error('EventSource error:', err)
           setIsConnected(false)
           setIsLoading(false)
-          
-          // Determine error type
-          let errorMessage = 'Connection lost'
-          if (err.type === 'error') {
-            errorMessage = 'Server connection failed'
-          }
-          
+
+          const errorMessage = handleConnectionError({ type: 'NETWORK' })
           setError(errorMessage)
-          
+
           if (onError) {
             onError({
               type: 'CONNECTION_ERROR',
@@ -193,16 +210,17 @@ export default function EventStreamViewer({
 
           eventSource.close()
 
-          // Auto-retry if enabled
           if (autoRetry && retryCount < maxRetries) {
-            setTimeout(retryConnection, 2000)
+            setTimeout(retryConnection, DEFAULT_CONFIG.retryDelay)
           }
         }
+
       } catch (err) {
-        console.error('Error creating EventSource:', err)
-        setError(`Failed to connect: ${err.message}`)
+        logger.error('Connection setup error:', err)
+        const errorMessage = handleConnectionError({ type: 'SETUP' })
+        setError(errorMessage)
         setIsLoading(false)
-        
+
         if (onError) {
           onError({
             type: 'SETUP_ERROR',
@@ -219,9 +237,28 @@ export default function EventStreamViewer({
       if (timeoutTimer) clearTimeout(timeoutTimer)
       if (warningTimer) clearTimeout(warningTimer)
       if (elapsedTimer) clearInterval(elapsedTimer)
-      if (eventSource) eventSource.close()
+      if (eventSource) {
+        try {
+          eventSource.close()
+        } catch (err) {
+          logger.error('Error closing EventSource:', err)
+        }
+      }
     }
   }, [planId, timeoutMs, warningMs, onTimeout, onError, autoRetry, maxRetries, retryCount])
+
+  if (error && events.length === 0) {
+    return (
+      <Card>
+        <CardContent>
+          <FallbackUI 
+            error={error}
+            onRetry={retryConnection}
+          />
+        </CardContent>
+      </Card>
+    )
+  }
 
   const progressPercentage = Math.min((elapsedTime / timeoutMs) * 100, 100)
 

@@ -1,352 +1,294 @@
+"""
+FastAPI application with OpenTelemetry observability
+"""
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import Optional, Dict, Any, List
-import uvicorn
+from typing import Optional
+from datetime import datetime, timezone
+import asyncio
+from uuid import uuid4
 import logging
-from datetime import datetime
 import sys
 import os
-from fastapi.responses import StreamingResponse
-import uuid
-from sse import event_stream, PlanningEventTracker, planning_trackers
 
-# Add parent directory to path for imports
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from config.agents import AGENTS, AGENT_ROUTING_CONFIG, WEATHER_CONFIG
-from mcp_servers.mock_data import MockDataServer
-
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# Setup structured logging
+import structlog
+structlog.configure(
+    processors=[
+        structlog.processors.JSONRenderer()
+    ],
+    context_class=dict,
+    logger_factory=structlog.PrintLoggerFactory(),
+)
+logger = structlog.get_logger()
 
 # Initialize FastAPI
 app = FastAPI(
-    title="Event Planning API",
-    description="AI-powered event planning with multi-agent orchestration",
-    version="1.0.0"
+    title="MCP API",
+    description="Model Context Protocol with Observability",
+    version="0.1.0"
 )
 
-# Add CORS middleware
+# Get allowed origins from environment
+allowed_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:5173").split(",")
+
+# Add CORS middleware FIRST (before other middleware)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
-# ==================== Request/Response Models ====================
+# Add custom middleware (order matters - add metrics FIRST after CORS)
+from backend.middleware import MetricsMiddleware, TracingMiddleware, LoggingMiddleware
+app.add_middleware(LoggingMiddleware)
+app.add_middleware(TracingMiddleware)
+app.add_middleware(MetricsMiddleware)
 
-class LocationQuery(BaseModel):
-    location: str
-    date: Optional[str] = None
+# Import monitoring
+from backend.monitoring import metrics_collector
 
-class WeatherRequest(BaseModel):
-    location: str
-    date: str
+# Models
+class HealthResponse(BaseModel):
+    status: str
+    message: str
+    python_version: str
 
-class EventPlanRequest(BaseModel):
-    event_type: str
-    location: str
-    date: str
-    guest_count: int
-    budget: float
-    weather_data: Optional[Dict[str, Any]] = None
+class PlanRequest(BaseModel):
+    """Request to create a plan"""
+    query: str
+    context: Optional[dict] = {}
+    event_date: Optional[str] = None
+    event_location: Optional[str] = None
+    num_people: Optional[int] = 0
+    budget: Optional[float] = 0.0
 
-class ReservationRequest(BaseModel):
-    service_type: str
-    service_id: str
-    details: Dict[str, Any]
+class PlanResponse(BaseModel):
+    """Response with plan details"""
+    plan_id: str
+    status: str
+    query: str
+    created_at: str
+    event_date: Optional[str] = None
+    event_location: Optional[str] = None
+    num_people: Optional[int] = 0
+    budget: Optional[float] = 0.0
+    progress: Optional[int] = 0
+    result: Optional[dict] = {}
+    updated_at: Optional[str] = None
 
-class BudgetValidationRequest(BaseModel):
-    allocated_budget: float
-    calculated_cost: float
+class PlanStatus(BaseModel):
+    """Plan status details"""
+    plan_id: str
+    status: str
+    progress: int
+    result: dict = {}
+    created_at: str
+    updated_at: str
 
-# ==================== Mock Weather Function ====================
+# In-memory storage (replace with database later)
+plans_db = {}
 
-def get_weather_forecast(location: str, date: str) -> Dict[str, Any]:
-    """Fetch weather forecast"""
-    import random
-    conditions = ["sunny", "clear", "partly cloudy"]
-    temp = random.randint(18, 28)
-    confidence = random.uniform(0.75, 0.99)
-    
-    return {
-        "location": location,
-        "date": date,
-        "temperature": temp,
-        "condition": random.choice(conditions),
-        "confidence": round(confidence, 2),
-        "humidity": random.randint(30, 70),
-        "wind_speed": random.randint(5, 15),
-        "is_favorable": (
-            temp >= WEATHER_CONFIG["ideal_temp_range"][0] and
-            temp <= WEATHER_CONFIG["ideal_temp_range"][1] and
-            confidence >= WEATHER_CONFIG["min_confidence"]
+# Background tasks
+async def process_plan(plan_id: str):
+    """Simulate plan processing in background"""
+    try:
+        if plan_id not in plans_db:
+            return
+        
+        plan = plans_db[plan_id]
+        
+        # Simulate processing steps
+        for progress in [25, 50, 75, 100]:
+            await asyncio.sleep(2)  # Simulate work
+            
+            plan["progress"] = progress
+            plan["updated_at"] = datetime.now(timezone.utc).isoformat()
+            
+            logger.info(
+                "plan_processing",
+                plan_id=plan_id,
+                progress=progress
+            )
+        
+        # Mark as completed with results
+        plan["status"] = "completed"
+        plan["progress"] = 100
+        plan["updated_at"] = datetime.now(timezone.utc).isoformat()
+        plan["result"] = {
+            "summary": f"Plan for: {plan['query']}\nDate: {plan['event_date']}\nLocation: {plan['event_location']}\nGuests: {plan['num_people']}\nBudget: ${plan['budget']}",
+            "steps": [
+                "Step 1: Initial planning",
+                "Step 2: Resource allocation",
+                "Step 3: Timeline creation",
+                "Step 4: Budget breakdown"
+            ],
+            "estimated_cost": plan['budget'],
+            "duration_days": 30,
+            "event_details": {
+                "event_date": plan['event_date'],
+                "event_location": plan['event_location'],
+                "num_people": plan['num_people'],
+                "budget": plan['budget']
+            }
+        }
+        
+        logger.info(
+            "plan_completed",
+            plan_id=plan_id
         )
-    }
+    
+    except Exception as e:
+        plan = plans_db.get(plan_id)
+        if plan:
+            plan["status"] = "failed"
+            plan["result"] = {"error": str(e)}
+        
+        logger.error(
+            "plan_processing_failed",
+            plan_id=plan_id,
+            error=str(e),
+            exc_info=True
+        )
 
-# ==================== API Endpoints ====================
-
-@app.get("/health")
+@app.get("/health", response_model=HealthResponse)
 async def health_check():
     """Health check endpoint"""
+    logger.info("health_check", endpoint="/health")
     return {
         "status": "healthy",
-        "timestamp": datetime.now().isoformat(),
-        "service": "Event Planning API"
+        "message": "API is running",
+        "python_version": f"{sys.version.split()[0]}"
     }
 
-@app.get("/agents")
-async def list_agents():
-    """List all available agents"""
+@app.get("/")
+async def root():
+    """Root endpoint"""
+    logger.info("root", endpoint="/")
+    return {"message": "Welcome to MCP API"}
+
+@app.post("/plan", response_model=PlanResponse)
+@app.post("/plan/create", response_model=PlanResponse)
+async def create_plan(request: PlanRequest):
+    """Create a new planning request"""
+    plan_id = str(uuid4())
+    now = datetime.now(timezone.utc).isoformat()
+    
+    logger.info(
+        "create_plan",
+        plan_id=plan_id,
+        query=request.query,
+        event_date=request.event_date,
+        event_location=request.event_location,
+        num_people=request.num_people,
+        budget=request.budget
+    )
+    
+    plans_db[plan_id] = {
+        "plan_id": plan_id,
+        "status": "processing",
+        "query": request.query,
+        "event_date": request.event_date,
+        "event_location": request.event_location,
+        "num_people": request.num_people,
+        "budget": request.budget,
+        "context": request.context,
+        "progress": 0,
+        "result": {},
+        "created_at": now,
+        "updated_at": now
+    }
+    
+    # Start background processing task
+    asyncio.create_task(process_plan(plan_id))
+    
     return {
-        "agents": [
-            {
-                "name": agent["name"],
-                "description": agent["description"],
-                "skills": agent["skills"]
-            }
-            for agent in AGENTS
+        "plan_id": plan_id,
+        "status": "processing",
+        "query": request.query,
+        "event_date": request.event_date,
+        "event_location": request.event_location,
+        "num_people": request.num_people,
+        "budget": request.budget,
+        "created_at": now
+    }
+
+@app.get("/plan/{plan_id}", response_model=PlanResponse)
+async def get_plan(plan_id: str):
+    """Get a specific plan"""
+    if plan_id not in plans_db:
+        logger.warning("get_plan_not_found", plan_id=plan_id)
+        raise HTTPException(status_code=404, detail="Plan not found")
+    
+    plan = plans_db[plan_id]
+    logger.info("get_plan", plan_id=plan_id, status=plan["status"])
+    
+    return {
+        "plan_id": plan["plan_id"],
+        "status": plan["status"],
+        "query": plan["query"],
+        "event_date": plan.get("event_date"),
+        "event_location": plan.get("event_location"),
+        "num_people": plan.get("num_people", 0),
+        "budget": plan.get("budget", 0.0),
+        "progress": plan.get("progress", 0),
+        "result": plan.get("result", {}),
+        "created_at": plan["created_at"],
+        "updated_at": plan.get("updated_at", plan["created_at"])
+    }
+
+@app.get("/plans")
+async def list_plans():
+    """List all plans"""
+    logger.info("list_plans", count=len(plans_db))
+    return {
+        "total": len(plans_db),
+        "plans": list(plans_db.values())
+    }
+
+@app.get("/metrics")
+async def get_metrics():
+    """Get system metrics"""
+    logger.info("metrics_request")
+    return metrics_collector.get_metrics()
+
+@app.post("/weather")
+async def get_weather(request: PlanRequest):
+    """Get weather information for event planning"""
+    logger.info("get_weather", query=request.query)
+    
+    # Mock weather data for now
+    return {
+        "location": "San Francisco",
+        "temperature": 72,
+        "condition": "Partly Cloudy",
+        "forecast": [
+            {"day": "Monday", "high": 75, "low": 62, "condition": "Sunny"},
+            {"day": "Tuesday", "high": 68, "low": 59, "condition": "Cloudy"},
+            {"day": "Wednesday", "high": 70, "low": 60, "condition": "Rainy"}
         ]
     }
 
-@app.get("/agents/routing")
-async def get_routing_config():
-    """Get agent routing configuration"""
-    return {"routing_config": AGENT_ROUTING_CONFIG}
-
-@app.post("/weather")
-async def get_weather(request: WeatherRequest):
-    """Get weather forecast for a location"""
-    try:
-        weather_data = get_weather_forecast(request.location, request.date)
-        return weather_data
-    except Exception as e:
-        logger.error(f"Weather endpoint error: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/search/hotels")
-async def search_hotels_endpoint(location: str):
-    """Search hotels in a location"""
-    try:
-        hotels = MockDataServer.get_hotels(location, "", "")
-        return {"hotels": hotels}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/search/venues")
-async def search_venues_endpoint(location: str, capacity: int = 100):
-    """Search venues in a location"""
-    try:
-        venues = MockDataServer.get_venues(location, capacity)
-        return {"venues": venues}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/search/services")
-async def search_services(service_type: str, location: str):
-    """Search any service type"""
-    try:
-        services = MockDataServer.search_services(service_type, location)
-        return {
-            "service_type": service_type,
-            "location": location,
-            "results": services,
-            "count": len(services)
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/plan/create")
-async def create_event_plan(request: EventPlanRequest):
-    """Create a comprehensive event plan"""
-    try:
-        # Get weather forecast first
-        weather_data = get_weather_forecast(request.location, request.date)
-        
-        # Create event plan
-        plan = MockDataServer.create_event_plan(
-            request.event_type,
-            request.location,
-            request.date,
-            request.guest_count,
-            request.budget,
-            weather_data
-        )
-        
-        # Generate summary
-        summary = MockDataServer.get_event_summary(plan)
-        
-        return {
-            "plan": plan,
-            "summary": summary,
-            "created_at": datetime.now().isoformat()
-        }
-    except Exception as e:
-        logger.error(f"Plan creation error: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/budget/validate")
-async def validate_budget(request: BudgetValidationRequest):
-    """Validate budget for an event"""
-    try:
-        validation = MockDataServer.validate_budget(
-            request.allocated_budget,
-            request.calculated_cost
-        )
-        return validation
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/reservation/make")
-async def make_reservation(request: ReservationRequest):
-    """Make a reservation for a service"""
-    try:
-        reservation = MockDataServer.make_reservation(
-            request.service_type,
-            request.service_id,
-            request.details
-        )
-        return reservation
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/services/all")
-async def get_all_services(location: str):
-    """Get all available services in a location"""
-    try:
-        services = MockDataServer.list_all_services(location)
-        return {
-            "location": location,
-            "services": services
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-# ==================== SSE Endpoints ====================
-
-@app.get("/stream/plan/{plan_id}")
-async def stream_plan_events(plan_id: str):
-    """Stream real-time events for a specific event plan"""
-    try:
-        return StreamingResponse(
-            event_stream.subscribe(f"plan_{plan_id}"),
-            media_type="text/event-stream",
-            headers={
-                "Cache-Control": "no-cache",
-                "X-Accel-Buffering": "no",
-                "Connection": "keep-alive"
-            }
-        )
-    except Exception as e:
-        logger.error(f"Stream error: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/stream/global")
-async def stream_global_events():
-    """Stream global events to all clients"""
-    try:
-        return StreamingResponse(
-            event_stream.subscribe("global"),
-            media_type="text/event-stream",
-            headers={
-                "Cache-Control": "no-cache",
-                "X-Accel-Buffering": "no",
-                "Connection": "keep-alive"
-            }
-        )
-    except Exception as e:
-        logger.error(f"Stream error: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/plan/create-stream")
-async def create_event_plan_with_stream(request: EventPlanRequest):
-    """Create event plan with real-time progress streaming"""
-    plan_id = str(uuid.uuid4())
-    tracker = PlanningEventTracker(plan_id)
-    planning_trackers[plan_id] = tracker
+@app.get("/weather/{location}")
+async def get_weather_by_location(location: str):
+    """Get weather for a specific location"""
+    logger.info("get_weather_by_location", location=location)
     
-    try:
-        # Start planning steps
-        await tracker.log_step("validation", "started", {
-            "event_type": request.event_type,
-            "location": request.location
-        })
-        
-        # Simulate planning process
-        await tracker.log_step("validation", "completed")
-        
-        await tracker.log_step("weather_check", "started", {"location": request.location})
-        weather_data = get_weather_forecast(request.location, request.date)
-        await tracker.log_step("weather_check", "completed", weather_data)
-        
-        await tracker.log_step("venue_search", "started", {"capacity": request.guest_count})
-        venues = MockDataServer.get_venues(request.location, request.guest_count)
-        await tracker.log_step("venue_search", "completed", {"count": len(venues)})
-        
-        await tracker.log_step("catering_search", "started", {"guests": request.guest_count})
-        catering = MockDataServer.get_catering_options(request.location, request.guest_count)
-        await tracker.log_step("catering_search", "completed", {"count": len(catering)})
-        
-        await tracker.log_step("entertainment_search", "started", {"location": request.location})
-        entertainment = MockDataServer.get_entertainment_options(request.location)
-        await tracker.log_step("entertainment_search", "completed", {"count": len(entertainment)})
-        
-        await tracker.log_step("plan_creation", "started")
-        plan = MockDataServer.create_event_plan(
-            request.event_type,
-            request.location,
-            request.date,
-            request.guest_count,
-            request.budget,
-            weather_data
-        )
-        await tracker.log_step("plan_creation", "completed")
-        
-        await tracker.log_step("summary_generation", "started")
-        summary = MockDataServer.get_event_summary(plan)
-        await tracker.log_step("summary_generation", "completed")
-        
-        await tracker.complete({
-            "plan": plan,
-            "summary": summary
-        })
-        
-        return {
-            "plan_id": plan_id,
-            "stream_url": f"/stream/plan/{plan_id}",
-            "plan": plan,
-            "summary": summary
-        }
-    
-    except Exception as e:
-        logger.error(f"Plan creation error: {str(e)}")
-        await tracker.error(str(e))
-        raise HTTPException(status_code=500, detail=str(e))
-
-# ==================== Startup/Shutdown ====================
-
-@app.on_event("startup")
-async def startup_event():
-    """Initialize on startup"""
-    logger.info("Event Planning API started")
-    logger.info(f"Loaded {len(AGENTS)} agents")
-    logger.info(f"Weather confidence threshold: {WEATHER_CONFIG['min_confidence']}")
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Cleanup on shutdown"""
-    logger.info("Event Planning API shutdown")
-
-# ==================== Run Server ====================
+    # Mock weather data - replace with real API call later
+    return {
+        "location": location,
+        "temperature": 72,
+        "condition": "Partly Cloudy",
+        "forecast": [
+            {"day": "Monday", "high": 75, "low": 62, "condition": "Sunny"},
+            {"day": "Tuesday", "high": 68, "low": 59, "condition": "Cloudy"},
+            {"day": "Wednesday", "high": 70, "low": 60, "condition": "Rainy"}
+        ]
+    }
 
 if __name__ == "__main__":
-    uvicorn.run(
-        app,
-        host="0.0.0.0",
-        port=8000,
-        log_level="info"
-    )
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)

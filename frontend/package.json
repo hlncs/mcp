@@ -10,20 +10,22 @@
     "lint": "eslint src --ext js,jsx"
   },
   "dependencies": {
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0",
-    "react-router-dom": "^6.20.0",
-    "@mui/material": "^5.14.0",
-    "@mui/icons-material": "^5.14.0",
     "@emotion/react": "^11.11.0",
     "@emotion/styled": "^11.11.0",
-    "axios": "^1.6.0"
+    "@mui/icons-material": "^5.14.0",
+    "@mui/material": "^5.14.0",
+    "axios": "^1.6.0",
+    "leaflet": "^1.9.4",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-leaflet": "^4.2.1",
+    "react-router-dom": "^6.20.0"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.2.0",
-    "vite": "^5.0.0",
     "eslint": "^8.55.0",
-    "eslint-plugin-react": "^7.33.0"
+    "eslint-plugin-react": "^7.33.0",
+    "vite": "^5.0.0"
   },
   "vite": {
     "plugins": [
@@ -43,5 +45,9 @@
       "outDir": "dist",
       "sourcemap": false
     }
+  },
+  "allowScripts": {
+    "react-leaflet@4.2.1": true,
+    "leaflet@1.9.4": true
   }
 }
