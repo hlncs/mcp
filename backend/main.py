@@ -48,6 +48,13 @@ from uuid import uuid4
 import asyncio
 from prometheus_client import CollectorRegistry, generate_latest, REGISTRY
 
+# Import new modules
+from backend.location_search import suggest_locations
+from backend.booking_manager import (
+    create_booking, get_booking, list_bookings, record_decision,
+    BookingType,
+)
+
 # Import configurations
 from backend.config.opentelemetry_config import init_otel
 from backend.config.prometheus_config import init_prometheus_metrics, get_metrics
@@ -254,7 +261,7 @@ async def execute_mcp_tool(tool_name: str, arguments: Dict[str, Any]):
     start_time = datetime.utcnow()
     try:
         with PerformanceTracker(f"mcp_tool_{tool_name}"):
-            result = mcp_server.call_tool(tool_name, arguments)
+            result = await mcp_server.call_tool(tool_name, arguments)
             
             # Record metrics
             duration_seconds = (datetime.utcnow() - start_time).total_seconds()
@@ -308,6 +315,90 @@ async def get_prometheus_metrics():
     from prometheus_client import generate_latest, REGISTRY
     metrics = generate_latest(REGISTRY).decode('utf-8')
     return Response(content=metrics, media_type="text/plain; charset=utf-8")
+
+
+# ---------------------------------------------------------------------------
+# Location search endpoints
+# ---------------------------------------------------------------------------
+
+@app.get("/location/search")
+async def location_search(q: str = Query(..., min_length=2, description="Location query")):
+    """
+    Search for locations using OpenStreetMap Nominatim.
+    Returns up to 5 suggestions for the given query string.
+    Used by the frontend for autocomplete and 'did you mean?' suggestions.
+    """
+    if not q.strip():
+        raise HTTPException(status_code=400, detail="Query must not be empty")
+
+    suggestions = await suggest_locations(q.strip(), limit=5)
+
+    logger.info("location_search_endpoint", extra={"query": q, "results": len(suggestions)})
+    return {"query": q, "suggestions": suggestions, "count": len(suggestions)}
+
+
+# ---------------------------------------------------------------------------
+# Booking endpoints (human-in-the-loop)
+# ---------------------------------------------------------------------------
+
+class BookingDecisionRequest(BaseModel):
+    approved: bool
+    note: Optional[str] = None
+
+
+@app.get("/bookings")
+async def list_all_bookings(plan_id: Optional[str] = Query(None)):
+    """List all bookings, optionally filtered by plan_id."""
+    return {"bookings": list_bookings(plan_id=plan_id)}
+
+
+@app.get("/bookings/{booking_id}")
+async def get_booking_detail(booking_id: str):
+    """Get a single booking by ID."""
+    booking = get_booking(booking_id)
+    if booking is None:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    return booking
+
+
+@app.put("/bookings/{booking_id}/decision")
+async def decide_booking(booking_id: str, body: BookingDecisionRequest):
+    """
+    Human approves or rejects a pending booking offer.
+    - approved=true  → status transitions to 'confirmed' + confirmation_code issued
+    - approved=false → status transitions to 'rejected'
+    """
+    booking = get_booking(booking_id)
+    if booking is None:
+        raise HTTPException(status_code=404, detail="Booking not found")
+
+    try:
+        updated = record_decision(booking_id, approved=body.approved, note=body.note)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+
+    action = "approved" if body.approved else "rejected"
+    logger.info(
+        "booking_decision_recorded",
+        extra={"booking_id": booking_id, "action": action},
+    )
+
+    # Publish SSE event if there's a plan_id associated
+    plan_id = updated.get("plan_id")
+    if plan_id:
+        await sse_manager.publish(
+            plan_id,
+            EventType.PROGRESS_UPDATE,
+            {
+                "event": "booking_decision",
+                "booking_id": booking_id,
+                "booking_type": updated.get("booking_type"),
+                "status": updated.get("status"),
+                "confirmation_code": updated.get("confirmation_code"),
+            },
+        )
+
+    return updated
 
 # Helper function for simulating processing
 @trace_function("simulate_plan_processing")

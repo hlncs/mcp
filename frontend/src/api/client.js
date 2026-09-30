@@ -43,34 +43,44 @@ client.interceptors.response.use(
 export const apiClient = {
   // Health
   getHealth: () => client.get('/health'),
-  
+
   // Plans
-  createPlan: (query, context = {}, eventDetails = {}) => 
-    client.post('/plan/create', { 
-      query, 
+  createPlan: (query, context = {}, eventDetails = {}) =>
+    client.post('/plan/create', {
+      query,
       context,
       event_date: eventDetails.event_date,
       event_location: eventDetails.event_location,
       num_people: eventDetails.num_people,
       budget: eventDetails.budget,
     }),
-  
-  getPlan: (planId) => 
-    client.get(`/plan/${planId}`),
-  
-  listPlans: () => 
-    client.get('/plans'),
-  
+
+  getPlan: (planId) => client.get(`/plan/${planId}`),
+
+  listPlans: () => client.get('/plans'),
+
   // Weather
-  getWeather: (query) => 
-    client.post('/weather', { query, context: {} }),
-  
-  getWeatherByLocation: (location) => 
-    client.get(`/weather/${location}`),
-  
+  getWeather: (query) => client.post('/weather', { query, context: {} }),
+
+  getWeatherByLocation: (location) => client.get(`/weather/${location}`),
+
+  // Location search (OpenStreetMap Nominatim)
+  searchLocation: (query) => client.get('/location/search', { params: { q: query } }),
+
+  // Bookings (human-in-the-loop)
+  listBookings: (planId) =>
+    client.get('/bookings', planId ? { params: { plan_id: planId } } : {}),
+
+  getBooking: (bookingId) => client.get(`/bookings/${bookingId}`),
+
+  decideBooking: (bookingId, approved, note = '') =>
+    client.put(`/bookings/${bookingId}/decision`, { approved, note }),
+
+  // MCP tools
+  executeMcpTool: (toolName, args) => client.post(`/mcp/tools/${toolName}`, args),
+
   // Metrics
-  getMetrics: () => 
-    client.get('/metrics'),
+  getMetrics: () => client.get('/metrics'),
 }
 
 export default client

@@ -33,8 +33,15 @@ class SSEEvent:
     
     def to_sse_format(self) -> str:
         """Convert to SSE format"""
+        def _default(obj):
+            if isinstance(obj, datetime):
+                return obj.isoformat()
+            if isinstance(obj, Enum):
+                return obj.value
+            raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
+
         lines = [f"event: {self.event_type.value}"]
-        lines.append(f"data: {json.dumps(asdict(self))}")
+        lines.append(f"data: {json.dumps(asdict(self), default=_default)}")
         lines.append("")
         return "\n".join(lines)
 

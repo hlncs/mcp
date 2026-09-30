@@ -13,6 +13,7 @@ import WeatherPage from './pages/WeatherPage'
 import BudgetPage from './pages/BudgetPage'
 import ServicesPage from './pages/ServicesPage'
 import SettingsPage from './pages/SettingsPage'
+import BookingPage from './pages/BookingPage'
 
 const theme = createTheme({
   palette: {
@@ -55,6 +56,7 @@ function App() {
                 <Route path="/weather" element={<WeatherPage />} />
                 <Route path="/budget" element={<BudgetPage />} />
                 <Route path="/services" element={<ServicesPage />} />
+                <Route path="/bookings" element={<BookingPage />} />
                 <Route path="/settings" element={<SettingsPage />} />
 
                 {/* Backwards compatibility */}

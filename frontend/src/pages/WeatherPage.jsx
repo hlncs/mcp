@@ -5,7 +5,6 @@ import {
   Box,
   Card,
   CardContent,
-  TextField,
   Button,
   Typography,
   Grid,
@@ -15,13 +14,12 @@ import {
   CircularProgress,
 } from '@mui/material'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
-import SearchIcon from '@mui/icons-material/Search'
 import CloudIcon from '@mui/icons-material/Cloud'
 import ThermostatIcon from '@mui/icons-material/Thermostat'
-import LocationOnIcon from '@mui/icons-material/LocationOn'
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
+import LocationSearch from '../components/LocationSearch'
 
 // Fix Leaflet marker icons
 delete L.Icon.Default.prototype._getIconUrl
@@ -31,189 +29,107 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
 })
 
+// Open-Meteo WMO code → human text (matches assistant-parser mapping)
+const WMO_CODES = {
+  0: 'Clear Sky', 1: 'Mainly Clear', 2: 'Partly Cloudy', 3: 'Overcast',
+  45: 'Fog', 48: 'Depositing Rime Fog',
+  51: 'Light Drizzle', 53: 'Moderate Drizzle', 55: 'Dense Drizzle',
+  61: 'Slight Rain', 63: 'Moderate Rain', 65: 'Heavy Rain',
+  71: 'Slight Snow', 73: 'Moderate Snow', 75: 'Heavy Snow',
+  80: 'Slight Rain Showers', 81: 'Moderate Rain Showers', 82: 'Violent Rain Showers',
+  95: 'Thunderstorm', 96: 'Thunderstorm with Slight Hail', 99: 'Thunderstorm with Heavy Hail',
+}
+
+async function fetchOpenMeteoWeather(lat, lon) {
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true`
+  const res = await fetch(url)
+  if (!res.ok) throw new Error(`Open-Meteo error ${res.status}`)
+  const data = await res.json()
+  const cw = data.current_weather
+  return {
+    temperature: cw.temperature,
+    windSpeed: cw.windspeed,
+    condition: WMO_CODES[cw.weathercode] ?? `Code ${cw.weathercode}`,
+    time: cw.time,
+  }
+}
+
 export default function WeatherPage() {
   const navigate = useNavigate()
   const primaryColor = '#1976D2'
   const secondaryColor = '#42A5F5'
 
-  const [location, setLocation] = useState('')
+  const [locationQuery, setLocationQuery] = useState('')
+  const [selectedLocation, setSelectedLocation] = useState(null)   // OSM suggestion object
+  const [weatherData, setWeatherData] = useState(null)
   const [temperatureUnit, setTemperatureUnit] = useState('celsius')
-  const [selectedLocation, setSelectedLocation] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
 
-  // Mock weather data with coordinates
-  const weatherDatabase = {
-    'sydney': {
-      name: 'Sydney, Australia',
-      lat: -33.8688,
-      lng: 151.2093,
-      temperature: 22,
-      humidity: 65,
-      windSpeed: 12,
-      condition: 'Partly Cloudy',
-      pressure: 1013,
-    },
-    'new york': {
-      name: 'New York, USA',
-      lat: 40.7128,
-      lng: -74.0060,
-      temperature: 15,
-      humidity: 70,
-      windSpeed: 8,
-      condition: 'Cloudy',
-      pressure: 1015,
-    },
-    'london': {
-      name: 'London, UK',
-      lat: 51.5074,
-      lng: -0.1278,
-      temperature: 12,
-      humidity: 75,
-      windSpeed: 10,
-      condition: 'Rainy',
-      pressure: 1010,
-    },
-    'tokyo': {
-      name: 'Tokyo, Japan',
-      lat: 35.6762,
-      lng: 139.6503,
-      temperature: 18,
-      humidity: 60,
-      windSpeed: 5,
-      condition: 'Clear',
-      pressure: 1018,
-    },
-    'paris': {
-      name: 'Paris, France',
-      lat: 48.8566,
-      lng: 2.3522,
-      temperature: 14,
-      humidity: 68,
-      windSpeed: 9,
-      condition: 'Partly Cloudy',
-      pressure: 1012,
-    },
-  }
-
-  const handleSearch = () => {
-    if (!location.trim()) {
-      setError('Please enter a location')
-      return
-    }
-
-    setLoading(true)
+  const handleLocationSelect = async (suggestion) => {
+    setLocationQuery(suggestion.short_name)
+    setSelectedLocation(suggestion)
+    setWeatherData(null)
     setError(null)
-
-    // Simulate API call
-    setTimeout(() => {
-      // Extract the city name from the input (e.g., "Sydney, Australia" → "sydney")
-      const cityName = location.toLowerCase().split(',')[0].trim()
-      const weatherData = weatherDatabase[cityName]
-
-      if (weatherData) {
-        setSelectedLocation(weatherData)
-        setLocation('')
-        setError(null)
-      } else {
-        const availableCities = Object.values(weatherDatabase)
-          .map(w => w.name)
-          .join(', ')
-        setError(`Weather data not found for "${location}". Available locations: ${availableCities}`)
-        setSelectedLocation(null)
-      }
-
+    setLoading(true)
+    try {
+      const wx = await fetchOpenMeteoWeather(suggestion.lat, suggestion.lon)
+      setWeatherData(wx)
+    } catch (err) {
+      setError(`Could not fetch weather data: ${err.message}`)
+    } finally {
       setLoading(false)
-    }, 500)
-  }
-
-  const convertTemperature = (celsius) => {
-    if (temperatureUnit === 'fahrenheit') {
-      return Math.round((celsius * 9/5) + 32)
-    }
-    return celsius
-  }
-
-  const getTemperatureSymbol = () => {
-    return temperatureUnit === 'celsius' ? '°C' : '°F'
-  }
-
-  const handleKeyPress = (e) => {
-    if (e.key === 'Enter') {
-      handleSearch()
     }
   }
+
+  const convertTemperature = (celsius) =>
+    temperatureUnit === 'fahrenheit' ? Math.round((celsius * 9) / 5 + 32) : celsius
+
+  const tempSymbol = temperatureUnit === 'celsius' ? '°C' : '°F'
 
   return (
     <Container maxWidth="lg">
       <Box sx={{ py: 4 }}>
-        {/* Back Button */}
-        <Button
-          startIcon={<ArrowBackIcon />}
-          onClick={() => navigate('/')}
-          sx={{ mb: 3 }}
-        >
+        <Button startIcon={<ArrowBackIcon />} onClick={() => navigate('/')} sx={{ mb: 3 }}>
           Back to Home
         </Button>
 
-        {/* Header */}
         <Box sx={{ mb: 4 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
             <CloudIcon sx={{ fontSize: 32, color: secondaryColor }} />
             <Typography variant="h4" sx={{ fontWeight: 'bold', color: '#212121' }}>
               Weather Forecast
             </Typography>
           </Box>
           <Typography variant="body2" color="text.secondary">
-            Search for a location to view weather forecasts and find vendors nearby
+            Search any location — suggestions appear as you type. Weather data is live from Open-Meteo.
           </Typography>
         </Box>
 
-        {/* Search Section */}
+        {/* Search + unit selector */}
         <Grid container spacing={3} sx={{ mb: 4 }}>
-          {/* Search Card */}
           <Grid item xs={12} md={6}>
-            <Card sx={{ border: `1px solid #e0e0e0` }}>
+            <Card sx={{ border: '1px solid #e0e0e0' }}>
               <CardContent>
                 <Typography variant="h6" sx={{ fontWeight: 600, mb: 2 }}>
                   Search Location
                 </Typography>
-
-                <Box sx={{ mb: 2 }}>
-                  <TextField
-                    fullWidth
-                    label="Enter location"
-                    placeholder="e.g., Sydney, Australia"
-                    value={location}
-                    onChange={(e) => setLocation(e.target.value)}
-                    onKeyPress={handleKeyPress}
-                    variant="outlined"
-                    size="small"
-                    InputProps={{
-                      startAdornment: (
-                        <LocationOnIcon sx={{ mr: 1, color: 'text.secondary' }} />
-                      ),
-                    }}
-                  />
-                </Box>
-
-                <Button
-                  fullWidth
-                  variant="contained"
-                  startIcon={<SearchIcon />}
-                  onClick={handleSearch}
+                <LocationSearch
+                  value={locationQuery}
+                  onChange={setLocationQuery}
+                  onSelect={handleLocationSelect}
+                  label="Enter location"
+                  placeholder="e.g. Sydney, Austraila"
                   disabled={loading}
-                  sx={{
-                    backgroundColor: primaryColor,
-                    '&:hover': {
-                      backgroundColor: primaryColor,
-                      opacity: 0.9,
-                    },
-                  }}
-                >
-                  {loading ? <CircularProgress size={24} /> : 'Search'}
-                </Button>
-
+                />
+                {loading && (
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 2 }}>
+                    <CircularProgress size={18} />
+                    <Typography variant="caption" color="text.secondary">
+                      Fetching weather…
+                    </Typography>
+                  </Box>
+                )}
                 {error && (
                   <Alert severity="error" sx={{ mt: 2 }}>
                     {error}
@@ -223,236 +139,134 @@ export default function WeatherPage() {
             </Card>
           </Grid>
 
-          {/* Temperature Unit Selection */}
           <Grid item xs={12} md={6}>
-            <Card sx={{ border: `1px solid #e0e0e0` }}>
+            <Card sx={{ border: '1px solid #e0e0e0' }}>
               <CardContent>
                 <Typography variant="h6" sx={{ fontWeight: 600, mb: 2 }}>
                   Temperature Unit
                 </Typography>
-
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
                   <ThermostatIcon sx={{ color: secondaryColor }} />
                   <ToggleButtonGroup
                     value={temperatureUnit}
                     exclusive
-                    onChange={(e, newUnit) => {
-                      if (newUnit !== null) {
-                        setTemperatureUnit(newUnit)
-                      }
-                    }}
+                    onChange={(_, v) => v && setTemperatureUnit(v)}
                     fullWidth
                   >
-                    <ToggleButton
-                      value="celsius"
-                      sx={{
-                        '&.Mui-selected': {
-                          backgroundColor: secondaryColor,
-                          color: 'white',
-                          '&:hover': {
+                    {['celsius', 'fahrenheit'].map((unit) => (
+                      <ToggleButton
+                        key={unit}
+                        value={unit}
+                        sx={{
+                          '&.Mui-selected': {
                             backgroundColor: secondaryColor,
+                            color: 'white',
+                            '&:hover': { backgroundColor: secondaryColor },
                           },
-                        },
-                      }}
-                    >
-                      Celsius (°C)
-                    </ToggleButton>
-                    <ToggleButton
-                      value="fahrenheit"
-                      sx={{
-                        '&.Mui-selected': {
-                          backgroundColor: secondaryColor,
-                          color: 'white',
-                          '&:hover': {
-                            backgroundColor: secondaryColor,
-                          },
-                        },
-                      }}
-                    >
-                      Fahrenheit (°F)
-                    </ToggleButton>
+                        }}
+                      >
+                        {unit === 'celsius' ? 'Celsius (°C)' : 'Fahrenheit (°F)'}
+                      </ToggleButton>
+                    ))}
                   </ToggleButtonGroup>
                 </Box>
-
                 <Typography variant="caption" color="text.secondary">
-                  Select your preferred temperature unit for weather displays
+                  Select your preferred temperature unit
                 </Typography>
               </CardContent>
             </Card>
           </Grid>
         </Grid>
 
-        {/* Map and Weather Info */}
-        {selectedLocation && (
+        {/* Map + weather details */}
+        {selectedLocation && weatherData && (
           <>
-            {/* Map Section */}
-            <Card sx={{ mb: 4, border: `1px solid #e0e0e0`, overflow: 'hidden' }}>
-              <Box sx={{ height: '400px', width: '100%' }}>
+            <Card sx={{ mb: 4, border: '1px solid #e0e0e0', overflow: 'hidden' }}>
+              <Box sx={{ height: 400, width: '100%' }}>
                 <MapContainer
-                  center={[selectedLocation.lat, selectedLocation.lng]}
-                  zoom={13}
+                  key={`${selectedLocation.lat}-${selectedLocation.lon}`}
+                  center={[selectedLocation.lat, selectedLocation.lon]}
+                  zoom={11}
                   style={{ height: '100%', width: '100%' }}
                 >
                   <TileLayer
                     url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                     attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
                   />
-                  <Marker
-                    position={[selectedLocation.lat, selectedLocation.lng]}
-                  >
+                  <Marker position={[selectedLocation.lat, selectedLocation.lon]}>
                     <Popup>
-                      <Box sx={{ p: 1 }}>
-                        <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                          {selectedLocation.name}
-                        </Typography>
-                        <Typography variant="caption">
-                          {selectedLocation.condition}
-                        </Typography>
-                      </Box>
+                      <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                        {selectedLocation.short_name}
+                      </Typography>
+                      <Typography variant="caption">{weatherData.condition}</Typography>
                     </Popup>
                   </Marker>
                 </MapContainer>
               </Box>
             </Card>
 
-            {/* Weather Details */}
-            <Card sx={{ border: `1px solid #e0e0e0` }}>
+            <Card sx={{ border: '1px solid #e0e0e0' }}>
               <CardContent>
                 <Typography variant="h6" sx={{ fontWeight: 600, mb: 3 }}>
-                  Weather Details for {selectedLocation.name}
+                  Weather for {selectedLocation.short_name}
                 </Typography>
 
-                <Grid container spacing={3}>
-                  {/* Temperature */}
-                  <Grid item xs={12} sm={6} md={3}>
-                    <Box
-                      sx={{
-                        p: 2,
-                        backgroundColor: `${secondaryColor}10`,
-                        borderRadius: '8px',
-                        border: `1px solid ${secondaryColor}20`,
-                      }}
-                    >
-                      <Typography variant="caption" color="text.secondary">
-                        Temperature
-                      </Typography>
-                      <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1 }}>
-                        <Typography variant="h5" sx={{ fontWeight: 700, color: primaryColor }}>
-                          {convertTemperature(selectedLocation.temperature)}
+                <Grid container spacing={2}>
+                  {[
+                    {
+                      label: 'Temperature',
+                      value: convertTemperature(weatherData.temperature),
+                      unit: tempSymbol,
+                    },
+                    { label: 'Wind Speed', value: weatherData.windSpeed, unit: 'km/h' },
+                    { label: 'Condition', value: weatherData.condition, unit: '' },
+                    {
+                      label: 'Observed at',
+                      value: weatherData.time.replace('T', ' '),
+                      unit: 'UTC',
+                    },
+                  ].map(({ label, value, unit }) => (
+                    <Grid item xs={12} sm={6} md={3} key={label}>
+                      <Box
+                        sx={{
+                          p: 2,
+                          backgroundColor: `${secondaryColor}10`,
+                          borderRadius: '8px',
+                          border: `1px solid ${secondaryColor}20`,
+                        }}
+                      >
+                        <Typography variant="caption" color="text.secondary">
+                          {label}
                         </Typography>
-                        <Typography variant="body2" sx={{ color: primaryColor }}>
-                          {getTemperatureSymbol()}
-                        </Typography>
+                        <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 0.5, mt: 0.5 }}>
+                          <Typography variant="h5" sx={{ fontWeight: 700, color: primaryColor }}>
+                            {value}
+                          </Typography>
+                          {unit && (
+                            <Typography variant="body2" sx={{ color: primaryColor }}>
+                              {unit}
+                            </Typography>
+                          )}
+                        </Box>
                       </Box>
-                    </Box>
-                  </Grid>
-
-                  {/* Humidity */}
-                  <Grid item xs={12} sm={6} md={3}>
-                    <Box
-                      sx={{
-                        p: 2,
-                        backgroundColor: `${secondaryColor}10`,
-                        borderRadius: '8px',
-                        border: `1px solid ${secondaryColor}20`,
-                      }}
-                    >
-                      <Typography variant="caption" color="text.secondary">
-                        Humidity
-                      </Typography>
-                      <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1 }}>
-                        <Typography variant="h5" sx={{ fontWeight: 700, color: primaryColor }}>
-                          {selectedLocation.humidity}
-                        </Typography>
-                        <Typography variant="body2" sx={{ color: primaryColor }}>
-                          %
-                        </Typography>
-                      </Box>
-                    </Box>
-                  </Grid>
-
-                  {/* Wind Speed */}
-                  <Grid item xs={12} sm={6} md={3}>
-                    <Box
-                      sx={{
-                        p: 2,
-                        backgroundColor: `${secondaryColor}10`,
-                        borderRadius: '8px',
-                        border: `1px solid ${secondaryColor}20`,
-                      }}
-                    >
-                      <Typography variant="caption" color="text.secondary">
-                        Wind Speed
-                      </Typography>
-                      <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1 }}>
-                        <Typography variant="h5" sx={{ fontWeight: 700, color: primaryColor }}>
-                          {selectedLocation.windSpeed}
-                        </Typography>
-                        <Typography variant="body2" sx={{ color: primaryColor }}>
-                          km/h
-                        </Typography>
-                      </Box>
-                    </Box>
-                  </Grid>
-
-                  {/* Pressure */}
-                  <Grid item xs={12} sm={6} md={3}>
-                    <Box
-                      sx={{
-                        p: 2,
-                        backgroundColor: `${secondaryColor}10`,
-                        borderRadius: '8px',
-                        border: `1px solid ${secondaryColor}20`,
-                      }}
-                    >
-                      <Typography variant="caption" color="text.secondary">
-                        Pressure
-                      </Typography>
-                      <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1 }}>
-                        <Typography variant="h5" sx={{ fontWeight: 700, color: primaryColor }}>
-                          {selectedLocation.pressure}
-                        </Typography>
-                        <Typography variant="body2" sx={{ color: primaryColor }}>
-                          mb
-                        </Typography>
-                      </Box>
-                    </Box>
-                  </Grid>
-
-                  {/* Condition */}
-                  <Grid item xs={12}>
-                    <Box
-                      sx={{
-                        p: 2,
-                        backgroundColor: `${secondaryColor}10`,
-                        borderRadius: '8px',
-                        border: `1px solid ${secondaryColor}20`,
-                      }}
-                    >
-                      <Typography variant="caption" color="text.secondary">
-                        Condition
-                      </Typography>
-                      <Typography variant="h6" sx={{ fontWeight: 600, color: primaryColor }}>
-                        {selectedLocation.condition}
-                      </Typography>
-                    </Box>
-                  </Grid>
+                    </Grid>
+                  ))}
                 </Grid>
               </CardContent>
             </Card>
           </>
         )}
 
-        {/* No Location Selected Message */}
         {!selectedLocation && !error && (
-          <Card sx={{ border: `1px solid #e0e0e0` }}>
+          <Card sx={{ border: '1px solid #e0e0e0' }}>
             <CardContent sx={{ textAlign: 'center', py: 6 }}>
               <CloudIcon sx={{ fontSize: 48, color: secondaryColor, mb: 2 }} />
               <Typography variant="h6" sx={{ fontWeight: 600, mb: 1 }}>
-                Search for a location
+                Search for any location
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                Enter a city name above to view weather forecast and see it on the map
+                Start typing a city name — suggestions will appear automatically.
+                Misspellings are OK; we'll find the closest match.
               </Typography>
             </CardContent>
           </Card>

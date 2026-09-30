@@ -14,6 +14,7 @@ import {
 } from '@mui/material'
 import { apiClient } from '../api/client'
 import { useCurrency } from '../context/CurrencyContext'
+import LocationSearch from '../components/LocationSearch'
 
 export default function EventPlannerPage() {
   const [formData, setFormData] = useState({
@@ -260,15 +261,18 @@ export default function EventPlannerPage() {
                     InputLabelProps={{ shrink: true }}
                   />
 
-                  <TextField
-                    fullWidth
-                    label="Event Location"
-                    name="event_location"
-                    value={formData.event_location}
-                    onChange={handleChange}
-                    margin="normal"
-                    placeholder="e.g., Downtown Hotel, Community Center"
-                  />
+                  <Box sx={{ mt: 2, mb: 1 }}>
+                    <LocationSearch
+                      value={formData.event_location}
+                      onChange={(v) => setFormData((f) => ({ ...f, event_location: v }))}
+                      onSelect={(s) =>
+                        setFormData((f) => ({ ...f, event_location: s.short_name }))
+                      }
+                      label="Event Location"
+                      placeholder="e.g. Sydney, Australia"
+                      size="medium"
+                    />
+                  </Box>
 
                   <TextField
                     fullWidth

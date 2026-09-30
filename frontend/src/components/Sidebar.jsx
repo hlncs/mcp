@@ -16,6 +16,7 @@ import CloudIcon from '@mui/icons-material/Cloud'
 import MoneyIcon from '@mui/icons-material/Money'
 import SettingsIcon from '@mui/icons-material/Settings'
 import BuildIcon from '@mui/icons-material/Build'
+import FlightIcon from '@mui/icons-material/Flight'
 
 export default function Sidebar({ open }) {
   const navigate = useNavigate()
@@ -26,6 +27,7 @@ export default function Sidebar({ open }) {
     { label: 'Event Planner', icon: EventIcon, path: '/event-planner' },
     { label: 'Weather', icon: CloudIcon, path: '/weather' },
     { label: 'Budget', icon: MoneyIcon, path: '/budget' },
+    { label: 'Flights & Hotels', icon: FlightIcon, path: '/bookings' },
     { label: 'Services', icon: BuildIcon, path: '/services' },
   ]
 
