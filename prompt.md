@@ -10,12 +10,12 @@ You are an AI programming assistant helping with the **Event Planning System** -
 ## Project Structure
 
 ```
-/path/to/Projects/AI/mcp/
+/path/to/mcp/
 ├── backend/
 │   ├── main.py                  # FastAPI server with SSE endpoints
 │   └── sse.py                   # Server-Sent Events implementation
 ├── config/
-│   └── agents.py                # Agent configurations
+│   └── agents.py                # Agent configurations and routing
 ├── mcp_servers/
 │   ├── mock_data.py            # Mock data & business logic
 │   ├── event_planning_server.py # MCP tool definitions
@@ -33,13 +33,18 @@ You are an AI programming assistant helping with the **Event Planning System** -
 │   │   │   ├── Sidebar.jsx
 │   │   │   └── EventStreamViewer.jsx  # Real-time progress viewer
 │   │   ├── App.jsx
-│   │   └── main.jsx
+│   │   ├── main.jsx
+│   │   └── index.css
+│   ├── .env.example
+│   ├── .env.development
+│   ├── index.html
 │   ├── vite.config.js
 │   ├── package.json
-│   └── index.html
+│   └── .gitignore
 ├── .gitignore
 ├── README.md
-└── prompt.md
+├── prompt.md
+└── LICENSE
 ```
 
 ## Current Implementation Status
@@ -93,14 +98,16 @@ You are an AI programming assistant helping with the **Event Planning System** -
 
 **Terminal 1 - Backend:**
 ```bash
-cd /path/to/Projects/AI/mcp
+cd /path/to/mcp
+python -m venv .venv
+source .venv/bin/activate
 pip install fastapi uvicorn pydantic python-dotenv
 python backend/main.py
 ```
 
 **Terminal 2 - Frontend:**
 ```bash
-cd /path/to/Projects/AI/mcp/frontend
+cd /path/to/mcp/frontend
 npm install
 npm run dev
 ```

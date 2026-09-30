@@ -64,16 +64,21 @@ mcp/
 - **Node.js 18+** & **npm 9+**
 - **Git**
 
+### Clone and install
+
+From the repository root:
+
+```bash
+cd /path/to/mcp
+python -m venv .venv
+source .venv/bin/activate
+pip install fastapi uvicorn pydantic python-dotenv
+```
+
 ### Backend Setup
 
 ```bash
-# Navigate to project directory
-cd /path/toProjects/AI/mcp
-
-# Install Python dependencies
-pip install fastapi uvicorn pydantic python-dotenv
-
-# Start backend server
+# From the repository root
 python backend/main.py
 ```
 
@@ -84,13 +89,8 @@ API Documentation: **http://localhost:8000/docs**
 ### Frontend Setup
 
 ```bash
-# Navigate to frontend directory
 cd frontend
-
-# Install dependencies
 npm install
-
-# Start development server
 npm run dev
 ```
 
@@ -100,13 +100,15 @@ Frontend runs on: **http://localhost:3000**
 
 **Terminal 1 - Backend:**
 ```bash
-cd /path/toProjects/AI/mcp
+cd /path/to/mcp
+source .venv/bin/activate
 python backend/main.py
 ```
 
 **Terminal 2 - Frontend:**
 ```bash
-cd /path/toProjects/AI/mcp/frontend
+cd /path/to/mcp/frontend
+npm install
 npm run dev
 ```
 
@@ -170,7 +172,8 @@ http://localhost:8000
 ```bash
 GET /health
 
-Response: {
+Response:
+{
   "status": "healthy",
   "timestamp": "2026-09-26T10:30:00",
   "service": "Event Planning API"
@@ -232,7 +235,7 @@ Response:
   "summary": {...}
 }
 
-# Then open EventSource to:
+# Then open EventSource at:
 # http://localhost:8000/stream/plan/550e8400-e29b-41d4-a716-446655440000
 ```
 
@@ -266,7 +269,7 @@ GET /stream/plan/{plan_id}
 # Stream global events
 GET /stream/global
 
-# Returns: text/event-stream with JSON objects
+# Returns: text/event-stream with JSON payloads
 ```
 
 ### Services Search
