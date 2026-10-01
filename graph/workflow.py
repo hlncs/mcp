@@ -19,10 +19,14 @@ class EventPlanState(TypedDict):
 def parse_user_intent(state: EventPlanState) -> EventPlanState:
     """Extract intent and entities from user input"""
     user_input = state["user_input"].lower()
-    
-    # Route to appropriate agents based on keywords
+
+    # Route to appropriate agents based on keywords.
+    # Condition format: "user_intent contains 'kw1' or 'kw2'"
+    # We extract the quoted keywords and check them against user_input.
+    import re
     for routing_rule in AGENT_ROUTING_CONFIG:
-        if any(keyword in user_input for keyword in routing_rule["condition"].split(" or ")):
+        keywords = re.findall(r"'([^']+)'", routing_rule["condition"])
+        if any(kw.lower() in user_input for kw in keywords):
             state["current_agent"] = routing_rule["trigger"]
             state["messages"].append(f"Routing to {routing_rule['agents']}")
             break

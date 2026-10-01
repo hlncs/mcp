@@ -59,10 +59,15 @@ def create_booking(
     plan_id: str | None = None,
     preference: str = "cheapest",
     auto_approve: bool = False,
+    date_warning: str | None = None,
 ) -> dict[str, Any]:
     """
     Persist an offer. If auto_approve=True the booking is immediately
     confirmed and payment is processed — no human decision needed.
+
+    date_warning is set when hotel check-in is before the associated flight
+    arrival date. When present, auto_approve is expected to already be False
+    (enforced by the caller), and the warning is surfaced to the user.
     """
     booking_id = str(uuid.uuid4())
     record: dict[str, Any] = {
@@ -73,6 +78,7 @@ def create_booking(
         "plan_id": plan_id,
         "preference": preference,
         "auto_approve": auto_approve,
+        "date_warning": date_warning,
         "created_at": datetime.utcnow().isoformat(),
         "decided_at": None,
         "decision_note": None,
@@ -86,7 +92,10 @@ def create_booking(
         record["decision_note"] = "Auto-approved by user preference"
         logger.info("booking_auto_approved", extra={"booking_id": booking_id})
     else:
-        logger.info("booking_created_pending", extra={"booking_id": booking_id})
+        logger.info(
+            "booking_created_pending",
+            extra={"booking_id": booking_id, "has_date_warning": date_warning is not None},
+        )
 
     return record
 

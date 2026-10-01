@@ -90,7 +90,10 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
         "description": (
             "Search for available hotels and present an offer to the human. "
             "preference controls which hotel is selected. "
-            "If auto_approve=true the booking is confirmed immediately without human input."
+            "If auto_approve=true the booking is confirmed immediately without human input, "
+            "UNLESS the hotel check-in date is before the flight arrival date — in that case "
+            "auto_approve is overridden to false and the user must review and approve manually. "
+            "Pass flight_booking_id or flight_arrival_date to enable the date validation check."
         ),
         "inputSchema": {
             "type": "object",
@@ -111,6 +114,20 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                     "description": "Skip human approval and confirm immediately",
                 },
                 "plan_id": {"type": "string"},
+                "flight_booking_id": {
+                    "type": "string",
+                    "description": (
+                        "booking_id of the associated flight booking. "
+                        "Used to validate that hotel check-in is not before the flight arrival date."
+                    ),
+                },
+                "flight_arrival_date": {
+                    "type": "string",
+                    "description": (
+                        "Explicit flight arrival date (YYYY-MM-DD) if no flight_booking_id is available. "
+                        "Used to validate hotel check-in date."
+                    ),
+                },
             },
             "required": ["location", "check_in", "check_out"],
         },
@@ -386,12 +403,60 @@ class MCPEventPlanningServer:
 
             from datetime import date as _date
             try:
-                nights = (
-                    _date.fromisoformat(arguments["check_out"])
-                    - _date.fromisoformat(arguments["check_in"])
-                ).days
+                check_in_date = _date.fromisoformat(arguments["check_in"])
+                check_out_date = _date.fromisoformat(arguments["check_out"])
+                nights = (check_out_date - check_in_date).days
             except ValueError:
+                check_in_date = None
                 nights = 1
+
+            # ------------------------------------------------------------------
+            # Flight arrival date validation
+            # ------------------------------------------------------------------
+            date_warning: str | None = None
+            flight_arrival_date: _date | None = None
+
+            # Resolve flight arrival date from booking_id or explicit param
+            flight_booking_id = arguments.get("flight_booking_id")
+            flight_arrival_date_str = arguments.get("flight_arrival_date")
+
+            if flight_booking_id:
+                flight_booking = get_booking(flight_booking_id)
+                if flight_booking:
+                    flight_offer = flight_booking.get("offer", {})
+                    # The flight offer stores its date in "date" (YYYY-MM-DD).
+                    # The actual arrival could span to the next day but we use
+                    # the flight date as the earliest possible arrival day.
+                    raw = flight_offer.get("date") or flight_offer.get("arrival_date")
+                    if raw:
+                        try:
+                            flight_arrival_date = _date.fromisoformat(raw)
+                        except ValueError:
+                            pass
+
+            if flight_arrival_date is None and flight_arrival_date_str:
+                try:
+                    flight_arrival_date = _date.fromisoformat(flight_arrival_date_str)
+                except ValueError:
+                    pass
+
+            if flight_arrival_date and check_in_date:
+                if check_in_date < flight_arrival_date:
+                    date_warning = (
+                        f"⚠️  Hotel check-in ({arguments['check_in']}) is before the flight arrival date "
+                        f"({flight_arrival_date.isoformat()}). "
+                        f"Please review this booking — the hotel room may not be needed until the flight lands. "
+                        f"Auto-approval has been disabled. Please approve or reject this booking manually."
+                    )
+                    auto_approve = False  # Override: force human review
+                    logger.warning(
+                        "hotel_checkin_before_flight_arrival",
+                        extra={
+                            "check_in": arguments["check_in"],
+                            "flight_arrival_date": flight_arrival_date.isoformat(),
+                            "flight_booking_id": flight_booking_id,
+                        },
+                    )
 
             offer = {
                 **best,
@@ -407,19 +472,28 @@ class MCPEventPlanningServer:
                 plan_id=arguments.get("plan_id"),
                 preference=preference,
                 auto_approve=auto_approve,
+                date_warning=date_warning,
             )
-            status_msg = (
-                "Hotel booked and payment processed automatically."
-                if auto_approve
-                else "Hotel offer is awaiting human approval."
-            )
+            if auto_approve:
+                status_msg = "Hotel booked and payment processed automatically."
+            elif date_warning:
+                status_msg = (
+                    f"⚠️  Hotel check-in ({arguments['check_in']}) is BEFORE the flight arrival date "
+                    f"({flight_arrival_date.isoformat()}). Auto-approval has been disabled. "
+                    "Please review and approve this booking yourself."
+                )
+            else:
+                status_msg = "Hotel offer is awaiting human approval."
+
             return {
                 "booking_id": booking["booking_id"],
                 "status": booking["status"],
                 "auto_approved": auto_approve,
+                "date_warning": date_warning,
                 "message": status_msg,
                 "preference_used": preference,
                 "payment": booking.get("payment"),
+                "requires_manual_review": date_warning is not None,
                 "offer_summary": {
                     "hotel": offer.get("name"),
                     "tier": offer.get("tier"),
@@ -449,6 +523,8 @@ class MCPEventPlanningServer:
                 "decided_at": booking.get("decided_at"),
                 "confirmation_code": booking.get("confirmation_code"),
                 "decision_note": booking.get("decision_note"),
+                "date_warning": booking.get("date_warning"),
+                "requires_manual_review": booking.get("date_warning") is not None,
             }
 
         # ---- Existing MockData tools ----------------------------------------
