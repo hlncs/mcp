@@ -361,15 +361,16 @@ class MCPEventPlanningServer:
                 preference=preference,
                 auto_approve=auto_approve,
             )
+            actual_auto_approved = booking.get("status") == "confirmed" or booking.get("auto_approved", False)
             status_msg = (
                 "Flight booked and payment processed automatically."
-                if auto_approve
+                if actual_auto_approved
                 else "Flight offer is awaiting human approval."
             )
             return {
                 "booking_id": booking["booking_id"],
                 "status": booking["status"],
-                "auto_approved": auto_approve,
+                "auto_approved": actual_auto_approved,
                 "message": status_msg,
                 "preference_used": preference,
                 "payment": booking.get("payment"),
@@ -458,6 +459,28 @@ class MCPEventPlanningServer:
                         },
                     )
 
+            # resolve flight destination (if flight_booking provided)
+            flight_destination = (
+                flight_offer.get("arrival")
+                or flight_offer.get("arrival_city")
+                or flight_offer.get("destination")
+            )
+
+            # validate hotel location matches flight destination
+            requested_location = (arguments.get("location") or "").strip()
+            if flight_destination and requested_location:
+                if requested_location.lower() != str(flight_destination).strip().lower():
+                    location_warning = (
+                        f"⚠️  Hotel location ({requested_location}) does not match the flight destination "
+                        f"({flight_destination}). Auto-approval has been disabled. Please review this booking manually."
+                    )
+                    auto_approve = False
+                    logger.warning("hotel_location_mismatch", extra={
+                        "requested_location": requested_location,
+                        "flight_destination": flight_destination,
+                        "flight_booking_id": flight_booking_id,
+                    })
+
             offer = {
                 **best,
                 "check_in": arguments["check_in"],
@@ -466,30 +489,34 @@ class MCPEventPlanningServer:
                 "guests": guests,
                 "total_price": best["price_per_night"] * max(nights, 1),
             }
+            # combine date/location warnings into one field stored on booking
+            warnings = [w for w in (date_warning, location_warning) if w]
+            combined_warning = "\n".join(warnings) if warnings else None
+
             booking = create_booking(
                 BookingType.HOTEL,
                 offer=offer,
                 plan_id=arguments.get("plan_id"),
                 preference=preference,
                 auto_approve=auto_approve,
-                date_warning=date_warning,
+                date_warning=combined_warning,  # preserves existing create_booking API
             )
-            if auto_approve:
+            actual_auto_approved = booking.get("status") == "confirmed" or booking.get("auto_approved", False)
+            if actual_auto_approved:
                 status_msg = "Hotel booked and payment processed automatically."
+            elif location_warning:
+                status_msg = location_warning
             elif date_warning:
-                status_msg = (
-                    f"⚠️  Hotel check-in ({arguments['check_in']}) is BEFORE the flight arrival date "
-                    f"({flight_arrival_date.isoformat()}). Auto-approval has been disabled. "
-                    "Please review and approve this booking yourself."
-                )
+                status_msg = date_warning
             else:
                 status_msg = "Hotel offer is awaiting human approval."
 
             return {
                 "booking_id": booking["booking_id"],
                 "status": booking["status"],
-                "auto_approved": auto_approve,
+                "auto_approved": actual_auto_approved,
                 "date_warning": date_warning,
+                "location_warning": location_warning,
                 "message": status_msg,
                 "preference_used": preference,
                 "payment": booking.get("payment"),
